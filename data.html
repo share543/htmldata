@@ -231,6 +231,7 @@ legend{font-size:12px;color:var(--muted);padding:0 6px}
     <div class="frow" id="feOptsRow" style="display:none"><label>選項（每行一個）</label><textarea id="feOpts" class="fw" rows="6"></textarea></div>
     <div class="frow" id="feExRow"><label>範例（每行一個）</label><textarea id="feExamples" class="fw" rows="5"></textarea><div class="hint">新增紀錄時顯示為可點選的範例；文字／多行欄位也會提供輸入建議。</div></div>
     <div class="frow" id="feHintRow"><label>提示文字</label><input type="text" id="feHint" class="fw"><div class="hint">顯示在欄位下方，例如格式說明。</div></div>
+    <div class="frow" id="fePhRow"><label>範例提示（灰色）</label><input type="text" id="fePlaceholder" class="fw"><div class="hint">新增紀錄時顯示在空白欄位內，僅供提示、不會預填內容。</div></div>
     <div class="frow"><label>預設值</label><input type="text" id="feDefault" class="fw"></div>
     <div class="frow"><label>必填</label><input type="checkbox" id="feRequired" style="width:18px;height:18px"></div>
   </div>
@@ -335,9 +336,19 @@ var TEMPLATE = [
 
 var TYPE_LABEL = { text:"文字", combobox:"文字(可選可打)", select:"下拉選單", number:"數字", date:"日期", textarea:"多行文字", serial:"流水號(自動)" };
 
+// 各欄位的灰色範例提示（placeholder；只顯示、不預填）
+var FIELD_PLACEHOLDER = {
+  "客代":"例：K1001", "統編":"例：12345678", "公司名稱":"例：○○食品有限公司",
+  "收件地址":"例：高雄市○○區○○路1號", "聯絡窗口":"例：王先生", "聯絡電話":"例：07-1234567",
+  "聯絡信箱":"例：name@example.com", "開發者":"例：王小明", "收貨站所":"例：TW001",
+  "日均量體":"例：5~10件/天", "預估營收/月":"例：30000", "商品類別":"例：常溫食品",
+  "填單日期":"例：2026-09-03", "初步接洽":"例：2026-09-05", "需求確認":"例：2026-09-08",
+  "報價":"例：2026-09-10", "簽約":"例：2026-09-12", "導入":"例：2026-09-15"
+};
+
 function schemaFromTemplate(){
   return TEMPLATE.map(function(t){
-    return { key:t[0], label:t[0], type:t[1], options:(t[2]||[]).slice(), examples:(t[3]||[]).slice(), hint:t[4]||"", "default":"", required:false };
+    return { key:t[0], label:t[0], type:t[1], options:(t[2]||[]).slice(), examples:(t[3]||[]).slice(), hint:t[4]||"", placeholder:FIELD_PLACEHOLDER[t[0]]||"", "default":"", required:false };
   });
 }
 function serialKey(){ for(var i=0;i<SCHEMA.length;i++) if(SCHEMA[i].type==="serial") return SCHEMA[i].key; return null; }
@@ -598,12 +609,13 @@ function renderFieldList(){
 }
 var editingFieldIndex=-1, fieldIsNew=false;
 function openFieldEdit(idx){
-  var f = idx<0 ? { key:"", label:"", type:"text", options:[], examples:[], hint:"", "default":"", required:false } : SCHEMA[idx];
+  var f = idx<0 ? { key:"", label:"", type:"text", options:[], examples:[], hint:"", placeholder:"", "default":"", required:false } : SCHEMA[idx];
   fieldIsNew=(idx<0); editingFieldIndex=idx;
   $("feTitle").textContent = fieldIsNew?"新增欄位":"編輯欄位";
   $("feLabel").value=f.label||""; $("feKey").value=f.key||"";
   $("feType").value=f.type||"text"; $("feOpts").value=(f.options||[]).join("\n");
   $("feExamples").value=(f.examples||[]).join("\n"); $("feHint").value=f.hint||"";
+  $("fePlaceholder").value=f.placeholder||"";
   $("feDefault").value=(f["default"]||""); $("feRequired").checked=!!f.required;
   typeChanged(); openModal("mbFieldEdit");
 }
@@ -612,6 +624,7 @@ function typeChanged(){
   $("feOptsRow").style.display = (t==="select")?"grid":"none";
   $("feExRow").style.display = (t==="text"||t==="combobox"||t==="textarea")?"grid":"none";
   $("feHintRow").style.display = (t==="serial")?"none":"grid";
+  $("fePhRow").style.display = (t==="serial"||t==="select")?"none":"grid";
 }
 $("feType").onchange=typeChanged;
 $("btnAddField").onclick=function(){ openFieldEdit(-1); };
@@ -623,10 +636,11 @@ $("feSave").onclick=function(){
   for(var i=0;i<SCHEMA.length;i++){ if(i!==editingFieldIndex && SCHEMA[i].key===key){ toast("key 已重複："+key); return; } }
   var opts=[];
   if(type==="select"){ opts=$("feOpts").value.split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean); }
-  var examples=[]; var hint="";
+  var examples=[]; var hint=""; var placeholder="";
   if(type==="text"||type==="combobox"||type==="textarea"){ examples=$("feExamples").value.split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean); }
   if(type!=="serial"){ hint=strip($("feHint").value); }
-  var field={ key:key, label:label||key, type:type, options:opts, examples:examples, hint:hint, "default":strip($("feDefault").value), required:$("feRequired").checked };
+  if(type!=="serial"&&type!=="select"){ placeholder=strip($("fePlaceholder").value); }
+  var field={ key:key, label:label||key, type:type, options:opts, examples:examples, hint:hint, placeholder:placeholder, "default":strip($("feDefault").value), required:$("feRequired").checked };
   var oldKey=null, wasNew=fieldIsNew;
   if(!fieldIsNew && editingFieldIndex>=0){ oldKey=SCHEMA[editingFieldIndex].key; }
   if(!fieldIsNew && editingFieldIndex>=0){

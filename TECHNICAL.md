@@ -50,14 +50,15 @@ var PAGE = 0, PAGE_SIZE = 100, SEL = {};
 ### 2.2 Schema 欄位定義
 
 ```js
-{ key:"公司名稱", label:"公司名稱", type:"text", options:[], examples:[], hint:"", default:"", required:false }
+{ key:"公司名稱", label:"公司名稱", type:"text", options:[], examples:[], hint:"", placeholder:"", default:"", required:false }
 ```
 
 - `key` — 內部鍵值，同時是匯出 CSV 的欄名；不可含 `=` `;` `,`。
 - `label` — 顯示名稱。
 - `type` — `text | combobox | select | number | date | textarea | serial`。
 - `options` — `select` 的固定選項。
-- `examples` — 範例字串陣列；表單會顯示為可點選的範例 Chip（文字／多行欄位另併入輸入建議）。
+- `examples` — 範例字串陣列；表單顯示為可點選的範例 Chip（文字／多行欄位另併入輸入建議）。
+- `placeholder` — 空白欄位的**灰色範例提示**（只顯示、不預填值）。內建範本以 `FIELD_PLACEHOLDER` 對照表提供。
 - `hint` — 欄位下方的提示文字（如格式說明）。
 - 修改既有欄位 key 時，會將所有紀錄的舊 key 值搬移到新 key（函式 `feSave`）。
 
@@ -332,7 +333,7 @@ return s.replace(/\s+/g," ").trim();
 
 涵蓋：範本欄位、CSV 引號解析／跳脫、`_owner` 標記、JSON roundtrip、report CSV（表頭／日期／淨化／站所斜線）、2500 筆分塊儲存還原、合併（新增／疑似重複併單並保留 `_id`／同 `_id` 更新／相同略過／`both` 規則）、**存檔含資料副本**（`selfCopy()` 產出的殼層不含 `[data-runtime]` 節點、無重複控制項，且 `#datahtml-data` 內嵌資料可還原）、**欄位型別與範例**（`serial` 自動流水號／`統編` combobox／`日均量體` text／`預估營收` number／`甲指成功轉甲配` 是/否／`結案`・`說明`・`洽談內容` 範例／序號自動配發與補號），以及**真實 UI 點擊測試**（新增紀錄表單完整渲染、儲存、點列編輯）。
 
-目前：**46 / 46 PASS**（純函式 + 10 範本功能 + 6 UI + 5 存檔副本）。
+目前：**49 / 49 PASS**（純函式 + 11 範本功能 + 8 UI + 5 存檔副本）。
 
 > **重要**：純函式測試（走 `__DT_TEST__` 鉤子）不會觸發 UI 事件處理器，因此 2026-09 曾遺漏一個只在真實表單渲染時才會發生的錯誤（見第 11 節）。凡涉及 DOM 屬性的邏輯，務必以真實點擊補測。
 
