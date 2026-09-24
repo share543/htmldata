@@ -4,6 +4,8 @@
 
 設計場景：**站所業務各自建檔 → 匯出 JSON → 總部用同一工具多檔批次合併 → 匯出 `report.html` 相容 CSV 做分析**。
 
+> **線上開啟**：<https://share543.github.io/htmldata/data.html>　·　**GitHub 專案**：<https://github.com/share543/htmldata>
+
 ```
 業務A ─┐
 業務B ─┼─ 匯出 JSON ──►  總部 data.html（多檔合併 + 判重） ── 匯出 CSV ──►  crm/report.html（分析報表）

@@ -92,6 +92,9 @@ td.key{font-family:var(--mono);font-size:12px;color:var(--muted)}
 .exChips .chip:hover{border-color:var(--accent);color:var(--accent)}
 .fhint{font-size:12px;color:var(--muted);margin-top:4px}
 input[readonly]{cursor:default}
+.foot{margin-top:16px;padding:10px 2px;font-size:12px;color:var(--muted);border-top:1px solid var(--line)}
+.foot a{color:var(--muted);text-decoration:underline}
+.foot a:hover{color:var(--accent)}
 fieldset{border:1px solid var(--line);border-radius:8px;padding:10px;margin:0 0 12px}
 legend{font-size:12px;color:var(--muted);padding:0 6px}
 .flist .fitem{display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;background:var(--panel)}
@@ -114,7 +117,7 @@ legend{font-size:12px;color:var(--muted);padding:0 6px}
 .chkrow input[type=checkbox]{width:16px;height:16px}
 .dl-list input{width:100%}
 @media print{
-  .toolbar,.pager,.modalBack,.toast,.stats,p,h1,h2,h3,.banner{display:none !important}
+  .toolbar,.pager,.modalBack,.toast,.stats,p,h1,h2,h3,.banner,.foot{display:none !important}
   .tableWrap{max-height:none;box-shadow:none;border:0}
   body{background:#fff}
   .wrap{padding:0}
@@ -188,6 +191,12 @@ legend{font-size:12px;color:var(--muted);padding:0 6px}
   </div>
 
   <div class="pager" id="pager"></div>
+
+  <footer class="foot">單檔離線工具 ・
+    <a href="https://github.com/share543/htmldata" target="_blank" rel="noopener">GitHub 專案</a> ・
+    <a href="https://share543.github.io/htmldata/data.html" target="_blank" rel="noopener">線上版</a> ・
+    資料僅存於此瀏覽器，不會上傳
+  </footer>
 </div>
 
 <input type="file" id="mergeFileInput" multiple accept=".json,application/json" style="display:none">
