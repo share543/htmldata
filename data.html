@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>資料管理工具</title>
+<style>
+:root{
+  --bg:#f4f6f9; --panel:#ffffff; --ink:#1c2333; --muted:#6b7484;
+  --line:#e3e8ef; --accent:#2563eb; --accent-ink:#ffffff;
+  --danger:#dc2626; --ok:#16a34a; --warn:#d97706;
+  --chip:#eef2f7; --shadow:0 1px 2px rgba(20,30,60,.06),0 4px 16px rgba(20,30,60,.06);
+  --radius:10px; --mono:'SF Mono',Consolas,Menlo,monospace;
+  --add:var(--accent); --upd:#d97706; --dup:#9333ea;
+}
+html[data-theme="dark"]{
+  --bg:#10131a; --panel:#181d27; --ink:#e6eaf2; --muted:#8b94a7;
+  --line:#2a3242; --accent:#4d8dff; --accent-ink:#0b1020;
+  --danger:#ff6363; --ok:#3ddc84; --warn:#ffb454;
+  --chip:#232a38; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"PingFang TC","Microsoft JhengHei","Noto Sans TC",system-ui,sans-serif;}
+a{color:var(--accent)}
+button{font:inherit;cursor:pointer}
+.wrap{max-width:1480px;margin:0 auto;padding:14px}
+header.top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+h1{font-size:19px;margin:0 16px 0 0;font-weight:700}
+.sub{font-size:12px;color:var(--muted)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px;box-shadow:var(--shadow);margin-bottom:12px}
+.toolbar .sep{width:1px;align-self:stretch;background:var(--line);margin:0 2px}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 12px;font-size:13px}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.08);color:var(--accent-ink)}
+.btn.danger{color:var(--danger)}
+.btn.danger:hover{border-color:var(--danger)}
+.btn.small{padding:3px 8px;font-size:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.menuWrap{position:relative}
+.menu{position:absolute;top:calc(100% + 4px);left:0;min-width:190px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:4px;display:none;z-index:60}
+.menu.open{display:block}
+.menu button{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);padding:8px 10px;border-radius:6px;font-size:13px}
+.menu button:hover{background:var(--chip)}
+.menu .sep{height:1px;background:var(--line);margin:4px 2px}
+input[type=text],input[type=search],input[type=date],input[type=number],select,textarea{
+  font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;padding:6px 9px;outline:none;min-width:0;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+.nameChip{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.nameChip input{font-size:13px;width:110px}
+.stats{font-size:13px;color:var(--muted);padding:0 2px 10px}
+.stats b{color:var(--ink)}
+.banner{display:none;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;box-shadow:var(--shadow)}
+.banner.warn{border-left-color:var(--warn)}
+.banner.danger{border-left-color:var(--danger)}
+.banner.ok{border-left-color:var(--ok)}
+.tableWrap{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:auto;max-height:calc(100vh - 250px)}
+table{border-collapse:collapse;width:100%;white-space:nowrap}
+th,td{border-bottom:1px solid var(--line);padding:7px 10px;font-size:13px;text-align:left;vertical-align:top}
+th{position:sticky;top:0;background:var(--panel);z-index:2;color:var(--muted);font-weight:600;border-bottom:1px solid var(--line)}
+thead th{background:var(--chip)}
+tbody tr:hover{background:var(--chip)}
+tbody tr.selected{background:rgba(var(--accent),.06)}
+td.key{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.cb{width:26px;text-align:center}
+.tval{max-width:340px;white-space:pre-wrap;overflow-wrap:break-word}
+.sys{color:var(--muted);font-size:12px}
+.empty{padding:30px;text-align:center;color:var(--muted)}
+.pager{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--muted)}
+.pager .pg{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer}
+.pager .pg:disabled{opacity:.4}
+.pager .pg.cur{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.pager select.pgsel{padding:4px 8px}
+.modalBack{position:fixed;inset:0;background:rgba(15,20,30,.5);display:none;align-items:flex-start;justify-content:center;z-index:100;padding:30px 12px;overflow:auto}
+.modalBack.open{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);width:min(880px,100%);max-height:calc(100vh - 60px);display:flex;flex-direction:column}
+.modal.sm{width:min(520px,100%)}
+.modal .mh{padding:14px 18px;border-bottom:1px solid var(--line);font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:space-between}
+.modal .mb{padding:16px 18px;overflow:auto;flex:1}
+.modal .mf{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.modal .mh .x{border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;padding:2px 6px}
+.modal .mh .x:hover{color:var(--ink)}
+.frow{display:grid;grid-template-columns:180px 1fr;gap:8px 12px;align-items:center;margin-bottom:10px}
+.frow label{font-size:13px;color:var(--muted);text-align:right}
+.frow input.fw,.frow select.fw,.frow textarea.fw{width:100%}
+.frow .hint{grid-column:2;font-size:12px;color:var(--muted)}
+.exLabel{font-size:12px;color:var(--muted);margin-top:8px}
+.exChips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.exChips .chip{font-size:12px;border:1px solid var(--line);border-radius:99px;padding:3px 10px;background:var(--chip);color:var(--ink);cursor:pointer;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.exChips .chip:hover{border-color:var(--accent);color:var(--accent)}
+.fhint{font-size:12px;color:var(--muted);margin-top:4px}
+input[readonly]{cursor:default}
+fieldset{border:1px solid var(--line);border-radius:8px;padding:10px;margin:0 0 12px}
+legend{font-size:12px;color:var(--muted);padding:0 6px}
+.flist .fitem{display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;background:var(--panel)}
+.flist .fitem .lbl{font-weight:600;font-size:14px;flex:0 0 26%}
+.flist .fitem .typ{font-size:12px;color:var(--accent);flex:0 0 90px}
+.flist .fitem .meta{font-size:12px;color:var(--muted);flex:1}
+.flist .fitem .acts{display:flex;gap:4px}
+.kbd{font-family:var(--mono);font-size:12px;background:var(--chip);padding:1px 6px;border-radius:4px}
+.mergeSummary{font-size:13px}
+.mergeSummary table{width:100%;white-space:nowrap}
+.mergeSummary .ok{color:var(--ok)} .mergeSummary .upd{color:var(--warn)} .mergeSummary .dup{color:var(--dup)}
+.tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);margin-left:6px}
+.tag.new{color:var(--ok);border-color:var(--ok)} .tag.upd{color:var(--warn);border-color:var(--warn)} .tag.dup{color:var(--dup);border-color:var(--dup)}
+.mapping td,.mapping th{padding:5px 8px}
+.mapping select{width:100%}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 18px;border-radius:99px;font-size:13px;box-shadow:var(--shadow);z-index:200;display:none;max-width:90vw}
+.toast.show{display:block;animation:fade .25s}
+@keyframes fade{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+.chkrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:13px}
+.chkrow input[type=checkbox]{width:16px;height:16px}
+.dl-list input{width:100%}
+@media print{
+  .toolbar,.pager,.modalBack,.toast,.stats,p,h1,h2,h3,.banner{display:none !important}
+  .tableWrap{max-height:none;box-shadow:none;border:0}
+  body{background:#fff}
+  .wrap{padding:0}
+}
+@media (max-width:700px){
+  h1{font-size:16px}
+  .wrap{padding:8px}
+  .toolbar{padding:8px}
+  .btn{padding:5px 9px;font-size:12px}
+  .frow{grid-template-columns:1fr;gap:4px}
+  .frow label{text-align:left}
+  .flist .fitem{flex-wrap:wrap}
+  .flist .fitem .lbl{flex:1 0 100%}
+}
+</style>
+</head>
+<body>
+<div id="datahtml-data" hidden></div>
+<div class="wrap">
+  <header class="top">
+    <h1>資料管理工具</h1>
+    <span class="sub">單檔・離線・跨平台 — 站所業務各自建檔，總部一鍵合併統整</span>
+  </header>
+
+  <div class="banner" id="banner"></div>
+
+  <div class="toolbar">
+    <button class="btn primary" id="btnNew">＋ 新增紀錄</button>
+    <button class="btn danger" id="btnDel">刪除(<span id="delCount">0</span>)</button>
+    <span class="sep"></span>
+    <div class="menuWrap">
+      <button class="btn" id="btnManage">⚙ 欄位管理</button>
+      <button class="btn" id="btnTemplate">範本</button>
+    </div>
+    <span class="sep"></span>
+    <div class="menuWrap">
+      <button class="btn" id="btnImportMenu">⇪ 匯入 ▾</button>
+      <div class="menu" id="importMenu">
+        <button data-act="merge">合併 JSON（多檔批次）…</button>
+        <button data-act="restore">匯入 JSON（覆蓋目前資料）…</button>
+        <button data-act="csv">匯入 CSV（新增紀錄）…</button>
+      </div>
+    </div>
+    <div class="menuWrap">
+      <button class="btn" id="btnExportMenu">⇩ 匯出 ▾</button>
+      <div class="menu" id="exportMenu">
+        <button data-act="json">匯出 JSON（供合併/備份）</button>
+        <button data-act="csv">匯出 CSV（Excel 相容）</button>
+        <button data-act="report">匯出 CSV（供 report.html）…</button>
+      </div>
+    </div>
+    <button class="btn" id="btnSaveCopy">■ 存檔（含資料）</button>
+    <button class="btn danger" id="btnReset">清除記憶</button>
+    <span class="sep"></span>
+    <button class="btn" id="btnTheme">◐ 主題</button>
+    <button class="btn" id="btnPrint">列印</button>
+    <span class="sep"></span>
+    <label class="nameChip">我的名稱
+      <input type="text" id="ownerName" placeholder="如：王小明" maxlength="30">
+    </label>
+  </div>
+
+  <div class="stats" id="stats">資料筆數：<b>0</b> ・ 篩選後：<b>0</b> ・ 欄位：<b>0</b></div>
+
+  <div class="tableWrap">
+    <table id="mainTable">
+      <thead id="thead"></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty" id="empty" style="display:none">尚無資料。請先「⚙ 欄位管理」建立欄位，或套用「範本」，再按「＋ 新增紀錄」輸入。</div>
+  </div>
+
+  <div class="pager" id="pager"></div>
+</div>
+
+<input type="file" id="mergeFileInput" multiple accept=".json,application/json" style="display:none">
+<input type="file" id="restoreFileInput" accept=".json,application/json" style="display:none">
+<input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none">
+
+<div class="modalBack" id="mbFields"><div class="modal">
+  <div class="mh">欄位管理 <button class="x" data-close>✕</button></div>
+  <div class="mb">
+    <div class="flist" id="fieldList"></div>
+    <button class="btn" id="btnAddField">＋ 新增欄位</button>
+  </div>
+  <div class="mf"><button class="btn primary" data-close>完成</button></div>
+</div></div>
+
+<div class="modalBack" id="mbFieldEdit"><div class="modal sm">
+  <div class="mh" id="feTitle">編輯欄位 <button class="x" data-close>✕</button></div>
+  <div class="mb">
+    <div class="frow"><label>顯示名稱</label><input type="text" id="feLabel" class="fw"></div>
+    <div class="frow"><label>內部鍵值 key</label><input type="text" id="feKey" class="fw"><div class="hint">匯出 CSV 的使用欄名。請勿與其他欄位重複。</div></div>
+    <div class="frow"><label>型別</label>
+      <select id="feType" class="fw">
+        <option value="text">文字</option>
+        <option value="combobox">文字（可從既有值選，也可自訂）</option>
+        <option value="select">下拉選單（固定選項）</option>
+        <option value="number">數字</option>
+        <option value="date">日期</option>
+        <option value="textarea">多行文字</option>
+        <option value="serial">流水號（自動遞增）</option>
+      </select>
+    </div>
+    <div class="frow" id="feOptsRow" style="display:none"><label>選項（每行一個）</label><textarea id="feOpts" class="fw" rows="6"></textarea></div>
+    <div class="frow" id="feExRow"><label>範例（每行一個）</label><textarea id="feExamples" class="fw" rows="5"></textarea><div class="hint">新增紀錄時顯示為可點選的範例；文字／多行欄位也會提供輸入建議。</div></div>
+    <div class="frow" id="feHintRow"><label>提示文字</label><input type="text" id="feHint" class="fw"><div class="hint">顯示在欄位下方，例如格式說明。</div></div>
+    <div class="frow"><label>預設值</label><input type="text" id="feDefault" class="fw"></div>
+    <div class="frow"><label>必填</label><input type="checkbox" id="feRequired" style="width:18px;height:18px"></div>
+  </div>
+  <div class="mf">
+    <button class="btn danger" id="feDel">刪除欄位</button>
+    <span style="flex:1"></span>
+    <button class="btn" data-close>取消</button>
+    <button class="btn primary" id="feSave">儲存</button>
+  </div>
+</div></div>
+
+<div class="modalBack" id="mbRecord"><div class="modal">
+  <div class="mh" id="recTitle">新增紀錄 <button class="x" data-close>✕</button></div>
+  <div class="mb" id="recForm"></div>
+  <div class="mf">
+    <button class="btn" data-close>取消</button>
+    <button class="btn primary" id="recSave">儲存</button>
+  </div>
+</div></div>
+
+<div class="modalBack" id="mbConfirm"><div class="modal sm">
+  <div class="mh">確認 <button class="x" data-close>✕</button></div>
+  <div class="mb" id="confirmMsg"></div>
+  <div class="mf">
+    <button class="btn" id="confirmNo">取消</button>
+    <button class="btn primary" id="confirmYes">確定</button>
+  </div>
+</div></div>
+
+<div class="modalBack" id="mbMerge"><div class="modal">
+  <div class="mh">合併 JSON（多檔批次）<button class="x" data-close>✕</button></div>
+  <div class="mb" id="mergeBody"></div>
+  <div class="mf">
+    <span style="flex:1"></span>
+    <button class="btn" data-close>取消</button>
+    <button class="btn primary" id="mergeApply">套用合併</button>
+  </div>
+</div></div>
+
+<div class="modalBack" id="mbMap"><div class="modal">
+  <div class="mh" id="mapTitle">欄位對應 <button class="x" data-close>✕</button></div>
+  <div class="mb">
+    <div class="mapping tableWrap" style="box-shadow:none">
+      <table id="mapTable"></table>
+    </div>
+    <div class="chkrow" id="mapExtra"></div>
+  </div>
+  <div class="mf">
+    <span style="flex:1"></span>
+    <button class="btn" data-close>取消</button>
+    <button class="btn primary" id="mapApply">匯出</button>
+  </div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+(function(){
+/* ============================= 常數與狀態 ============================= */
+var LS_PREFIX = "datahtml.v1.";
+var META = { tool:"data.html", ver:1, exportedAt:null, sheet:"未命名資料表" };
+var SCHEMA = []; var RECORDS = []; var OWNER = "";
+var FILTER = { q:"", owner:"" };
+var PAGE = 0; var PAGE_SIZE = 100;
+var SEL = {};
+var dirty = false; var saveTimer = null;
+
+var SYSTEM_KEYS = ["_id","_owner","_createdAt","_updatedAt"];
+var SYSTEM_LABELS = { _id:"識別碼", _owner:"建立者", _createdAt:"建立時間", _updatedAt:"更新時間" };
+
+var REPORT_HEADERS = ["序號","客代","統編","公司名稱","收件地址","聯絡窗口","聯絡電話","聯絡信箱","開發者","課別","收貨站所","日均量體","預估營收/月","商品類別","填單日期","初步接洽","需求確認","報價","簽約","導入","結案","說明","洽談內容","類別","甲指成功轉甲配"];
+var REPORT_DATE_COLS = { "填單日期":1,"初步接洽":1,"需求確認":1,"報價":1,"簽約":1,"導入":1 };
+
+// [key, type, options, examples, hint]
+var TEMPLATE = [
+  ["序號","serial",[]],
+  ["客代","text",[]],
+  ["統編","combobox",[]],
+  ["公司名稱","text",[]],
+  ["收件地址","text",[]],
+  ["聯絡窗口","text",[]],
+  ["聯絡電話","text",[]],
+  ["聯絡信箱","text",[]],
+  ["開發者","combobox",[]],
+  ["課別","select",["中課","北一課","北二課","北三課","南一課","南二課"]],
+  ["收貨站所","combobox",[]],
+  ["日均量體","text",[]],
+  ["預估營收/月","number",[]],
+  ["商品類別","text",[]],
+  ["填單日期","date",[]],["初步接洽","date",[]],["需求確認","date",[]],["報價","date",[]],["簽約","date",[]],["導入","date",[]],
+  ["結案","textarea",[],
+    ["導入完成\n結案","五日三聯皆失敗\n故先結案","客戶婉拒\n故先結案","客戶考慮中\n故先結案","客戶需求無法滿足\n故暫緩開發，\n結案","已發信報價，客戶無回覆，故結案","客戶不願意更改配送商\n故先結案","食品有疑慮不承接\n故先結案"]],
+  ["說明","textarea",[],
+    ["平日8:30之後、13~17:30之間","希望先以mail聯繫，已mail牌價。","平日10~12點或14~17點","以提供報價與合約，待客戶評估(目前使用宅配通)","1、欲了解報價進行評估\n2、收件為偏鄉地區是否也可取件","文具/防水背包\n日均30-50件","常溫食品類/日均20件","3c配備，生活小物"]],
+  ["洽談內容","textarea",[],
+    ["3/13 拜訪","3/13 電聯未接","3/14 電聯成功；3/15 已寄報價待回覆","3/16 面談","3/18 客戶婉拒"],
+    "格式：3/13 說明，可用分號或換行分隔多筆"],
+  ["類別","select",["1P(SCM)","3P(MO+)","零擔"]],
+  ["甲指成功轉甲配","select",["是","否"]]
+];
+
+var TYPE_LABEL = { text:"文字", combobox:"文字(可選可打)", select:"下拉選單", number:"數字", date:"日期", textarea:"多行文字", serial:"流水號(自動)" };
+
+function schemaFromTemplate(){
+  return TEMPLATE.map(function(t){
+    return { key:t[0], label:t[0], type:t[1], options:(t[2]||[]).slice(), examples:(t[3]||[]).slice(), hint:t[4]||"", "default":"", required:false };
+  });
+}
+function serialKey(){ for(var i=0;i<SCHEMA.length;i++) if(SCHEMA[i].type==="serial") return SCHEMA[i].key; return null; }
+function nextSerial(){
+  var sk=serialKey(); if(!sk) return 1;
+  var max=0;
+  for(var i=0;i<RECORDS.length;i++){
+    var v=parseInt(String(RECORDS[i][sk]==null?"":RECORDS[i][sk]).replace(/[^0-9]/g,""),10);
+    if(!isNaN(v) && v>max) max=v;
+  }
+  return max+1;
+}
+function backfillSerial(){
+  var sk=serialKey(); if(!sk) return;
+  var max=0;
+  for(var i=0;i<RECORDS.length;i++){
+    var v=parseInt(String(RECORDS[i][sk]==null?"":RECORDS[i][sk]).replace(/[^0-9]/g,""),10);
+    if(!isNaN(v) && v>max) max=v;
+  }
+  var changed=false;
+  for(var j=0;j<RECORDS.length;j++){
+    if(RECORDS[j][sk]==null || String(RECORDS[j][sk]).trim()===""){ max++; RECORDS[j][sk]=String(max); changed=true; }
+  }
+  if(changed) scheduleSave();
+}
+
+/* ============================= 小工具 ============================= */
+function $(id){ return document.getElementById(id); }
+function el(tag, cls, html){ var d=document.createElement(tag); if(cls) d.className=cls; if(html!==undefined) d.textContent=html; return d; }
+function uid(){ return "id"+Date.now().toString(36)+Math.random().toString(36).slice(2,9); }
+function nowISO(){ var d=new Date(); var p=function(n){return (n<10?"0":"")+n;}; return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes()); }
+function strip(s){ return String(s==null?"":s).replace(/[\t\r ]+/g," ").replace(/[\u2028\u2029]/g," ").trim(); }
+function norm(s){ return String(s==null?"":s).trim(); }
+function esc(s){ return String(s==null?"":s); }
+function fmtVal(k, v){
+  if(v==null||v==="") return "";
+  var f=findField(k);
+  if(f && f.type==="date" && /^\d{4}-\d{2}-\d{2}$/.test(String(v))) return v;
+  return String(v);
+}
+function dateStrOf(v){ if(!v) return ""; var t=String(v).trim(); if(/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0,10); return t; }
+
+/* ============================= 資料層（分塊 localStorage） ============================= */
+function stateObj(){ return { meta:META, schema:SCHEMA, records:RECORDS, owner:OWNER }; }
+function saveToStorage(){
+  try{
+    var s = JSON.stringify(stateObj());
+    clearChunks();
+    var CH = 180000;
+    if(s.length <= CH){ localStorage.setItem(LS_PREFIX, s); }
+    else{
+      var n = Math.ceil(s.length/CH);
+      localStorage.setItem(LS_PREFIX+"n", String(n));
+      for(var i=0;i<n;i++){ localStorage.setItem(LS_PREFIX+i, s.slice(i*CH,(i+1)*CH)); }
+    }
+    dirty=false;
+    hideBanner();
+  }catch(e){ showBanner("localStorage 寫入失敗／已滿（"+(e&&e.name||"error")+"）。建議用「存檔（含資料）」下載副本保存。","danger"); }
+}
+function clearChunks(){
+  try{
+    var n=localStorage.getItem(LS_PREFIX+"n");
+    for(var i=0;i<(n?parseInt(n,10):0);i++) localStorage.removeItem(LS_PREFIX+i);
+    localStorage.removeItem(LS_PREFIX);
+    localStorage.removeItem(LS_PREFIX+"n");
+  }catch(e){}
+}
+function loadFromStorage(){
+  var n = localStorage.getItem(LS_PREFIX+"n");
+  var s;
+  if(n){ n=parseInt(n,10); var parts=[]; for(var i=0;i<n;i++){ var p=localStorage.getItem(LS_PREFIX+i); if(p===null) return false; parts.push(p); } s=parts.join(""); }
+  else{ s = localStorage.getItem(LS_PREFIX); }
+  if(!s) return false;
+  try{
+    var obj = JSON.parse(s);
+    SCHEMA = Array.isArray(obj.schema)?obj.schema:[];
+    RECORDS = Array.isArray(obj.records)?obj.records:[];
+    META = (obj.meta && obj.meta.tool)?obj.meta:META;
+    OWNER = obj.owner || OWNER;
+    return true;
+  }catch(e){ return false; }
+}
+function clearMemory(){ clearChunks(); localStorage.removeItem(LS_PREFIX+"owner"); }
+
+function scheduleSave(){
+  dirty=true;
+  if(saveTimer) clearTimeout(saveTimer);
+  saveTimer=setTimeout(function(){ saveToStorage(); }, 350);
+}
+
+/* ============================= 紀錄操作 ============================= */
+function findField(key){ if(!key) return null; for(var i=0;i<SCHEMA.length;i++) if(SCHEMA[i].key===key) return SCHEMA[i]; return null; }
+function makeRec(values){
+  var rec={ _id:uid(), _owner:OWNER||"(未設定)", _createdAt:nowISO(), _updatedAt:nowISO() };
+  for(var i=0;i<SCHEMA.length;i++){ var f=SCHEMA[i]; var v=values[f.key]; if(v===undefined && f["default"]!==undefined && f["default"]!=="") v=f["default"]; rec[f.key]= (v===undefined?"":String(v)); }
+  var sk=serialKey();
+  if(sk && (rec[sk]===""||rec[sk]==null)) rec[sk]=String(nextSerial());
+  return rec;
+}
+function addRecords(list){ for(var i=0;i<list.length;i++) RECORDS.push(list[i]); }
+function upsertRecord(rec){ for(var i=0;i<RECORDS.length;i++){ if(RECORDS[i]._id===rec._id){ RECORDS.splice(i,1,rec); return false; } } RECORDS.push(rec); return true; }
+function delRecords(ids){ var set={}; for(var i=0;i<ids.length;i++) set[ids[i]]=1; var n=RECORDS.length; RECORDS=RECORDS.filter(function(r){ return !set[r._id]; }); for(var k in set) delete SEL[k]; return n-RECORDS.length; }
+
+function filtered(){
+  var q=FILTER.q.trim().toLowerCase();
+  var own=FILTER.owner;
+  return RECORDS.filter(function(r){
+    if(own && (String(r._owner||"")!==own)) return false;
+    if(!q) return true;
+    for(var i=0;i<SCHEMA.length;i++){ var v=r[SCHEMA[i].key]; if(v!=null && String(v).toLowerCase().indexOf(q)>=0) return true; }
+    if(String(r._owner||"").toLowerCase().indexOf(q)>=0) return true;
+    return false;
+  });
+}
+
+/* ============================= 渲染 ============================= */
+function renderAll(){ renderStats(); renderOwnerFilter(); renderTable(); renderPager(); renderSelectButtons(); }
+function renderStats(){
+  var total=RECORDS.length, shown=filtered().length, nf=SCHEMA.length;
+  $("stats").innerHTML = "資料筆數：<b>"+total+"</b> ・ 篩選後：<b>"+shown+"</b> ・ 欄位：<b>"+nf+"</b>" + (dirty?" ・ <span style='color:var(--warn)'>尚未存入瀏覽器</span>":"") + "<span style='color:var(--muted)'>（資料自動存入本機瀏覽器）</span>";
+}
+function renderSelectButtons(){
+  $("delCount").textContent = Object.keys(SEL).length;
+}
+function ownerList(){
+  var set={}; set[""]=1;
+  for(var i=0;i<RECORDS.length;i++){ var o=String(RECORDS[i]._owner||""); if(o) set[o]=1; }
+  return Object.keys(set).sort();
+}
+function renderOwnerFilter(){
+  var sel=$("ownerFilter"); if(!sel) return;
+  var cur=sel.value; sel.innerHTML="";
+  var owns=ownerList();
+  for(var i=0;i<owns.length;i++){ var ov=owns[i]; var o=document.createElement("option"); o.value=ov; o.textContent= ov===""?"全部建立者":ov; sel.appendChild(o); }
+  sel.value = (owns.indexOf(cur)>=0)?cur:"";
+}
+function renderTable(){
+  var thead=$("thead"), tbody=$("tbody");
+  thead.innerHTML=""; tbody.innerHTML="";
+  var tr=document.createElement("tr");
+  var th0=document.createElement("th"); th0.className="cb";
+  var all=document.createElement("input"); all.type="checkbox"; all.id="chkAll"; all.onclick=function(){ var rows=filtered(); (rows.length? rows:[]).forEach(function(r){ if(all.checked) SEL[r._id]=1; else delete SEL[r._id]; }); renderTable(); renderSelectButtons(); };
+  th0.appendChild(all); tr.appendChild(th0);
+  for(var i=0;i<SCHEMA.length;i++){
+    var th=document.createElement("th"); th.id="hdr-"+SCHEMA[i].key;
+    th.textContent=SCHEMA[i].label+(SCHEMA[i].required?" <span style='color:var(--danger)'>*</span>":"");
+    if(SCHEMA[i].options && SCHEMA[i].options.length) th.textContent+= " ("+SCHEMA[i].options.length+"選項)";
+    tr.appendChild(th);
+  }
+  var thS=document.createElement("th"); thS.textContent="建立"; tr.appendChild(thS);
+  thead.appendChild(tr);
+  var rows=filtered();
+  var totalPages=Math.max(1,Math.ceil(rows.length/PAGE_SIZE));
+  if(PAGE>=totalPages) PAGE=totalPages-1;
+  var start=PAGE*PAGE_SIZE, end=Math.min(rows.length, start+PAGE_SIZE);
+  if(!rows.length){
+    $("empty").style.display="block"; $("pager").innerHTML="";
+  }else $("empty").style.display="none";
+  for(var r=start;r<end;r++){
+    (function(rec){
+      var rt=document.createElement("tr");
+      if(SEL[rec._id]) rt.className="selected";
+      var td0=document.createElement("td"); td0.className="cb";
+      var cb=document.createElement("input"); cb.type="checkbox"; cb.checked=!!SEL[rec._id];
+      cb.onclick=function(e){ e.stopPropagation(); if(cb.checked) SEL[rec._id]=1; else delete SEL[rec._id]; renderSelectButtons(); rt.classList.toggle("selected",!!SEL[rec._id]); };
+      td0.appendChild(cb); rt.appendChild(td0);
+      for(var i=0;i<SCHEMA.length;i++){
+        var td=document.createElement("td");
+        var k=SCHEMA[i].key, v=fmtVal(k, rec[k]);
+        var wrap=document.createElement("div"); wrap.className="tval"; wrap.textContent=v;
+        if(v!=null && String(v).indexOf("\n")>=0) wrap.style.whiteSpace="pre-wrap";
+        td.appendChild(wrap); rt.appendChild(td);
+      }
+      var tdS=document.createElement("td"); tdS.className="sys";
+      tdS.appendChild(document.createTextNode(rec._owner||""));
+      var br=document.createElement("br"); tdS.appendChild(br);
+      tdS.appendChild(document.createTextNode("⬆"+dateStrOf(rec._createdAt))); tdS.appendChild(br);
+      tdS.appendChild(document.createTextNode("✎"+dateStrOf(rec._updatedAt)));
+      rt.appendChild(tdS);
+      rt.onclick=function(){ openRecord(rec._id); };
+      rt.onkeydown=function(e){ if(e.key==="Enter"){ openRecord(rec._id);} };
+      rt.tabIndex=0;
+      tbody.appendChild(rt);
+    })(rows[r]);
+  }
+}
+function renderPager(){
+  var rows=filtered();
+  var tp=Math.max(1,Math.ceil(rows.length/PAGE_SIZE));
+  var box=$("pager"); box.innerHTML="";
+  var info=document.createElement("span");
+  info.textContent="第 "+(PAGE+1)+" / "+tp+" 頁，共 "+rows.length+" 筆（每頁 "+PAGE_SIZE+"）";
+  box.appendChild(info);
+  function pgBtn(label, page, opts){
+    var b=document.createElement("span"); b.className="pg"; b.textContent=label;
+    if(page<0||page>=tp) b.style.opacity=.4;
+    b.onclick=function(){ if(page<0||page>=tp) return; PAGE=page; renderTable(); renderPager(); };
+    return b;
+  }
+  box.appendChild(pgBtn("‹", PAGE-1));
+  var windowSize=5; var from=Math.max(0,PAGE-Math.floor(windowSize/2)); var to=Math.min(tp-1, from+windowSize-1); from=Math.max(0,to-windowSize+1);
+  if(from>0) box.appendChild(el("span","sys","…"));
+  for(var p=from;p<=to;p++){ var b=pgBtn(String(p+1),p); if(p===PAGE) b.classList.add("cur"); box.appendChild(b); }
+  if(to<tp-1) box.appendChild(el("span","sys","…"));
+  box.appendChild(pgBtn("›", PAGE+1));
+  var sel=document.createElement("select"); sel.className="pgsel"; sel.style.marginLeft="8px";
+  [50,100,200,500].forEach(function(n){ var o=document.createElement("option"); o.value=n; o.textContent="每頁 "+n; if(PAGE_SIZE===n) o.selected=true; sel.appendChild(o); });
+  sel.onchange=function(){ PAGE_SIZE=parseInt(sel.value,10); PAGE=0; renderTable(); renderPager(); };
+  box.appendChild(sel);
+}
+
+/* ============================= 對話框 ============================= */
+function openModal(id){ $(id).classList.add("open"); setTimeout(function(){ var inp=$(id).querySelector("input:not([type=checkbox])"); if(inp) inp.focus(); },50); }
+function closeModal(id){ $(id).classList.remove("open"); }
+function closeAllModals(){ Array.prototype.forEach.call(document.querySelectorAll(".modalBack.open"), function(m){ m.classList.remove("open"); }); }
+function modalYes(msg, yesLabel){
+  return new Promise(function(res){
+    $("confirmMsg").textContent=msg;
+    $("confirmYes").textContent=yesLabel||"確定";
+    openModal("mbConfirm");
+    var noBtn=$("confirmNo");
+    function cleanup(){ $("confirmYes").onclick=null; noBtn.onclick=null; }
+    $("confirmYes").onclick=function(){ closeModal("mbConfirm"); cleanup(); res(true); };
+    noBtn.onclick=function(){ closeModal("mbConfirm"); cleanup(); res(false); };
+  });
+}
+function toast(msg){
+  var t=$("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._tm); t._tm=setTimeout(function(){ t.classList.remove("show"); },2600);
+}
+function showBanner(msg, kind){
+  var b=$("banner"); b.textContent=msg; b.className="banner "+(kind||""); b.style.display="block";
+}
+function hideBanner(){ $("banner").style.display="none"; }
+
+document.querySelectorAll(".modalBack").forEach(function(m){
+  m.addEventListener("click", function(e){ if(e.target===m) m.classList.remove("open"); });
+  Array.prototype.forEach.call(m.querySelectorAll("[data-close]"), function(x){ x.onclick=function(){ m.classList.remove("open"); }; });
+});
+
+/* ============================= 欄位管理 ============================= */
+function renderFieldList(){
+  var box=$("fieldList"); box.innerHTML="";
+  if(!SCHEMA.length){ box.appendChild(el("div","empty","尚無欄位。")); }
+  SCHEMA.forEach(function(f,i){
+    var row=document.createElement("div"); row.className="fitem";
+    var lbl=el("span","lbl",f.label||f.key);
+    var typ=el("span","typ",TYPE_LABEL[f.type]||f.type);
+    var meta=el("span","meta",(f.required?"必填":"")+" ・ key="+f.key+(f.options&&f.options.length?" ・ "+(f.options.length)+"個選項":"")+(f.examples&&f.examples.length?" ・ "+(f.examples.length)+"範例":""));
+    var acts=document.createElement("div"); acts.className="acts";
+    var up=el("button","btn small","↑"); up.disabled=(i===0); up.onclick=function(){ var t=SCHEMA[i]; SCHEMA.splice(i,1); SCHEMA.splice(Math.max(0,i-1),0,t); renderFieldList(); scheduleSave(); };
+    var dn=el("button","btn small","↓"); dn.disabled=(i===SCHEMA.length-1); dn.onclick=function(){ var t=SCHEMA[i]; SCHEMA.splice(i,1); SCHEMA.splice(Math.min(SCHEMA.length,i+1),0,t); renderFieldList(); scheduleSave(); };
+    var ed=el("button","btn small","編輯"); ed.onclick=function(){ openFieldEdit(i); };
+    acts.appendChild(up); acts.appendChild(dn); acts.appendChild(ed);
+    row.appendChild(lbl); row.appendChild(typ); row.appendChild(meta); row.appendChild(acts);
+    box.appendChild(row);
+  });
+}
+var editingFieldIndex=-1, fieldIsNew=false;
+function openFieldEdit(idx){
+  var f = idx<0 ? { key:"", label:"", type:"text", options:[], examples:[], hint:"", "default":"", required:false } : SCHEMA[idx];
+  fieldIsNew=(idx<0); editingFieldIndex=idx;
+  $("feTitle").textContent = fieldIsNew?"新增欄位":"編輯欄位";
+  $("feLabel").value=f.label||""; $("feKey").value=f.key||"";
+  $("feType").value=f.type||"text"; $("feOpts").value=(f.options||[]).join("\n");
+  $("feExamples").value=(f.examples||[]).join("\n"); $("feHint").value=f.hint||"";
+  $("feDefault").value=(f["default"]||""); $("feRequired").checked=!!f.required;
+  typeChanged(); openModal("mbFieldEdit");
+}
+function typeChanged(){
+  var t=$("feType").value;
+  $("feOptsRow").style.display = (t==="select")?"grid":"none";
+  $("feExRow").style.display = (t==="text"||t==="combobox"||t==="textarea")?"grid":"none";
+  $("feHintRow").style.display = (t==="serial")?"none":"grid";
+}
+$("feType").onchange=typeChanged;
+$("btnAddField").onclick=function(){ openFieldEdit(-1); };
+$("feSave").onclick=function(){
+  var label=strip($("feLabel").value); var key=strip($("feKey").value); var type=$("feType").value;
+  if(!label && !key){ toast("請填顯示名稱或 key"); return; }
+  if(!key) key = "f"+(SCHEMA.length+1);
+  if(/[=;,]/.test(key)){ toast('key 不可包含 "=" ";" ","'); return; }
+  for(var i=0;i<SCHEMA.length;i++){ if(i!==editingFieldIndex && SCHEMA[i].key===key){ toast("key 已重複："+key); return; } }
+  var opts=[];
+  if(type==="select"){ opts=$("feOpts").value.split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean); }
+  var examples=[]; var hint="";
+  if(type==="text"||type==="combobox"||type==="textarea"){ examples=$("feExamples").value.split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean); }
+  if(type!=="serial"){ hint=strip($("feHint").value); }
+  var field={ key:key, label:label||key, type:type, options:opts, examples:examples, hint:hint, "default":strip($("feDefault").value), required:$("feRequired").checked };
+  var oldKey=null, wasNew=fieldIsNew;
+  if(!fieldIsNew && editingFieldIndex>=0){ oldKey=SCHEMA[editingFieldIndex].key; }
+  if(!fieldIsNew && editingFieldIndex>=0){
+    SCHEMA[editingFieldIndex]=field;
+  } else if(fieldIsNew){
+    SCHEMA.push(field);
+  }
+  if(oldKey && oldKey!==key){
+    for(var r=0;r<RECORDS.length;r++){ if(RECORDS[r][oldKey]!==undefined){ RECORDS[r][key]=RECORDS[r][oldKey]; delete RECORDS[r][oldKey]; } }
+    toast("欄位 key 已由 "+oldKey+" 改為 "+key+"（既有資料已搬移）");
+  }
+  closeModal("mbFieldEdit");
+  renderFieldList(); renderAll(); scheduleSave();
+};
+$("feDel").onclick=function(){
+  if(editingFieldIndex<0) return;
+  var key=SCHEMA[editingFieldIndex].key;
+  modalYes("確定刪除欄位「"+(SCHEMA[editingFieldIndex].label||key)+"」？既有紀錄中此欄的資料也會被移除。","刪除").then(function(ok){
+    if(!ok) return;
+    for(var i=0;i<RECORDS.length;i++){ delete RECORDS[i][key]; }
+    SCHEMA.splice(editingFieldIndex,1);
+    closeModal("mbFieldEdit"); renderFieldList(); renderAll(); scheduleSave();
+  });
+};
+$("btnManage").onclick=function(){ $("importMenu").classList.remove("open"); $("exportMenu").classList.remove("open"); renderFieldList(); openModal("mbFields"); };
+
+/* ============================= 範本 ============================= */
+$("btnTemplate").onclick=function(){
+  $("importMenu").classList.remove("open"); $("exportMenu").classList.remove("open");
+  var apply=function(){
+    SCHEMA = schemaFromTemplate();
+    backfillSerial();
+    closeAllModals(); renderFieldList(); renderAll(); scheduleSave();
+    toast("已套用 customer.xlsx 的 25 欄結構（不含內容）");
+  };
+  if(SCHEMA.length){ modalYes("套用範本將以 customer.xlsx 的 25 欄結構「取代」現有欄位。既有欄位會被移除（資料仍保留，但僅顯示在 JSON 匯出中）。是否繼續？","套用範本").then(function(ok){ if(ok) apply(); }); }
+  else apply();
+};
+
+/* ============================= 紀錄編輯 ============================= */
+var editingRecId=null;
+function openRecord(id){
+  var rec=null; for(var i=0;i<RECORDS.length;i++) if(RECORDS[i]._id===id) rec=RECORDS[i];
+  if(!rec) { toast("找不到該紀錄"); return; }
+  editingRecId=id;
+  $("recTitle").textContent="編輯紀錄 ・ "+String(rec._id).slice(0,8);
+  renderRecForm(rec);
+  openModal("mbRecord");
+}
+function openNewRecord(){
+  editingRecId=null;
+  $("recTitle").textContent="新增紀錄"+(OWNER?" ・ 建立者："+OWNER:"");
+  renderRecForm(null);
+  openModal("mbRecord");
+}
+function inputFor(f, value){
+  var isNew = (value===undefined||value===null);
+  var v = isNew ? (f["default"]||"") : value;
+  var inp;
+  if(f.type==="serial"){
+    inp=document.createElement("input"); inp.type="text"; inp.className="fw"; inp.readOnly=true;
+    inp.value = isNew ? String(nextSerial()) : String(v);
+    inp.dataset.k=f.key; inp.style.background="var(--chip)"; inp.style.color="var(--muted)";
+  } else if(f.type==="date"){
+    inp=document.createElement("input"); inp.type="date"; inp.className="fw"; inp.value=dateStrOf(v)||""; inp.dataset.k=f.key;
+  } else if(f.type==="number"){
+    inp=document.createElement("input"); inp.type="number"; inp.className="fw"; inp.value=String(v); inp.dataset.k=f.key;
+  } else if(f.type==="textarea"){
+    inp=document.createElement("textarea"); inp.className="fw"; inp.rows=4; inp.value=String(v); inp.dataset.k=f.key;
+  } else if(f.type==="select"){
+    inp=document.createElement("select"); inp.className="fw"; inp.dataset.k=f.key;
+    var vo=document.createElement("option"); vo.value=""; vo.textContent="（未填）"; inp.appendChild(vo);
+    (f.options||[]).forEach(function(op){ var o=document.createElement("option"); o.value=op; o.textContent=op; if(op===String(v)) o.selected=true; inp.appendChild(o); });
+  } else { // text / combobox
+    inp=document.createElement("input"); inp.type="text"; inp.className="fw"; inp.value=String(v); inp.dataset.k=f.key;
+  }
+  var exs=(f.examples||[]), useDl=null;
+  var canList=(f.type==="text"||f.type==="combobox"||f.type==="number"||f.type==="textarea");
+  if(canList && (exs.length || f.type==="combobox")){
+    var items=[].concat(exs);
+    if(f.type==="combobox") RECORDS.forEach(function(r){ var x=r[f.key]; if(x!=null && String(x)!=="") items.push(String(x)); });
+    var seen={}; useDl=document.createElement("datalist"); useDl.id="dl-"+f.key+"-"+Math.random().toString(36).slice(2,6);
+    items.forEach(function(x){ var s=String(x); if(!seen[s]){ seen[s]=1; var oo=document.createElement("option"); oo.value=s; useDl.appendChild(oo); } });
+    inp.setAttribute("list", useDl.id);
+  }
+  var ph = f.placeholder || (exs.length ? ("例："+String(exs[0]).replace(/\n/g," ／ ")) : "");
+  if(ph) inp.setAttribute("placeholder", ph);
+  var needWrap = !!useDl || exs.length>0 || !!f.hint;
+  if(!needWrap) return inp;
+  var wrap=document.createElement("div"); if(f.type==="combobox") wrap.style.position="relative";
+  wrap.appendChild(inp);
+  if(useDl) wrap.appendChild(useDl);
+  if(f.hint){ var ht=document.createElement("div"); ht.className="fhint"; ht.textContent=f.hint; wrap.appendChild(ht); }
+  if(exs.length && (f.type==="textarea"||f.type==="text"||f.type==="combobox")){
+    var lab=document.createElement("div"); lab.className="exLabel"; lab.textContent="範例（點選填入）"; wrap.appendChild(lab);
+    var chips=document.createElement("div"); chips.className="exChips";
+    exs.forEach(function(ex){
+      var b=document.createElement("button"); b.type="button"; b.className="chip"; b.textContent=String(ex).replace(/\n/g," ／ "); b.title=String(ex);
+      b.onclick=function(){
+        if(inp.tagName==="TEXTAREA"){ inp.value = inp.value.trim() ? (inp.value.replace(/\s+$/,"")+"\n"+ex) : ex; }
+        else inp.value=ex;
+        inp.focus();
+      };
+      chips.appendChild(b);
+    });
+    wrap.appendChild(chips);
+  }
+  return wrap;
+}
+function renderRecForm(rec){
+  var box=$("recForm"); box.innerHTML="";
+  if(!SCHEMA.length){ box.appendChild(el("p","empty","請先建立欄位（⚙ 欄位管理 或 範本）。")); return; }
+  SCHEMA.forEach(function(f){
+    var row=document.createElement("div"); row.className="frow";
+    var lbl=document.createElement("label"); lbl.textContent=f.label+(f.required?" *":"");
+    var input=inputFor(f, rec?rec[f.key]:undefined);
+    row.appendChild(lbl); row.appendChild(input);
+    box.appendChild(row);
+  });
+  if(rec){
+    var sys=el("div","sys","識別碼 "+rec._id+" ・ 建立者 "+(rec._owner||"")+" ・ 建立 "+(rec._createdAt||"")+" ・ 更新 "+(rec._updatedAt||""));
+    box.appendChild(sys);
+  }
+}
+$("btnNew").onclick=function(){ closeMenus(); openNewRecord(); };
+$("recSave").onclick=function(){
+  var values={};
+  var missing=[];
+  Array.prototype.forEach.call($("recForm").querySelectorAll("[data-k]"), function(inp){
+    var k=inp.dataset.k; var v=strip(inp.value);
+    var f=findField(k);
+    if(f && f.type==="date" && v){ v=dateStrOf(v); }
+    values[k]=v;
+    if(f && f.required && v==="") missing.push(f.label);
+  });
+  if(missing.length){ toast("必填未填："+missing.join("、")); return; }
+  if(editingRecId===null){
+    var sk=serialKey(); if(sk) delete values[sk];
+    var rec=makeRec(values);
+    RECORDS.push(rec);
+  }else{
+    for(var i=0;i<RECORDS.length;i++){
+      if(RECORDS[i]._id===editingRecId){
+        for(var k in values) RECORDS[i][k]=values[k];
+        RECORDS[i]._updatedAt=nowISO();
+        if(!RECORDS[i]._owner) RECORDS[i]._owner=OWNER;
+        break;
+      }
+    }
+  }
+  closeModal("mbRecord"); renderAll(); scheduleSave();
+  toast("已儲存");
+};
+
+/* ============================= 搜尋 / 過濾 / 刪除 ============================= */
+var searchInput=document.createElement("input"); searchInput.type="search";
+searchInput.placeholder="搜尋全部欄位…";
+searchInput.classList.add("tmpq"); searchInput.style.width="180px";
+searchInput.setAttribute("data-runtime","1");
+searchInput.oninput=function(){ FILTER.q=searchInput.value; PAGE=0; renderTable(); renderPager(); };
+(function(){ var t=$("btnDel"); t.parentNode.insertBefore(searchInput, t); })();
+
+var ownerSelect=document.createElement("select"); ownerSelect.id="ownerFilter"; ownerSelect.style.maxWidth="150px";
+ownerSelect.classList.add("tmpq"); ownerSelect.setAttribute("data-runtime","1");
+ownerSelect.onchange=function(){ FILTER.owner=ownerSelect.value; PAGE=0; renderTable(); renderPager(); };
+(function(){ var t=$("btnManage"); t.parentNode.insertBefore(ownerSelect, t); })();
+
+$("btnDel").onclick=function(){
+  var ids=Object.keys(SEL);
+  if(!ids.length){ toast("請先勾選要刪除的紀錄"); return; }
+  modalYes("確定刪除選取的 "+ids.length+" 筆紀錄？此動作無法復原。","刪除").then(function(ok){
+    if(!ok) return;
+    var n=delRecords(ids); renderAll(); scheduleSave(); toast("已刪除 "+n+" 筆");
+  });
+};
+function closeMenus(){ $("importMenu").classList.remove("open"); $("exportMenu").classList.remove("open"); }
+
+/* ============================= 匯出 ============================= */
+function download(name, content, mime){
+  var blob = new Blob([content], { type:(mime||"application/octet-stream")+";charset=utf-8" });
+  var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 800);
+}
+function exportJSON(){
+  var obj=stateObj();
+  obj.meta.exportedAt=nowISO();
+  obj.meta.owner=OWNER;
+  obj.meta.tool="data.html"; obj.meta.ver=1;
+  var name="資料匯出-"+dateStamp()+".json";
+  download(name, JSON.stringify(obj,null,1), "application/json");
+  toast("已匯出 JSON（"+RECORDS.length+" 筆），可供他人合併");
+}
+function dateStamp(){ var d=new Date(); var p=function(n){return (n<10?"0":"")+n;}; return d.getFullYear()+""+p(d.getMonth()+1)+""+p(d.getDate()); }
+
+function csvEscape(v){ v=String(v==null?"":v); if(/[",\n\r]/.test(v)) return '"'+v.replace(/"/g,'""')+'"'; return v; }
+
+function buildCSV(headers, recFn){ // recFn(cellArrs) → 每列資料串列
+  var lines=[];
+  lines.push(headers.map(csvEscape).join(","));
+  RECORDS.forEach(function(r){
+    var arr=[];
+    for(var i=0;i<headers.length;i++){ if(headers[i]==="_owner") arr.push(r._owner||""); else if(headers[i]==="_createdAt") arr.push(r._createdAt||""); else if(headers[i]==="_updatedAt") arr.push(r._updatedAt||""); else if(headers[i]==="_id") arr.push(r._id||""); else arr.push(r[headers[i]]==null?"":String(r[headers[i]])); }
+    lines.push(arr.map(csvEscape).join(","));
+  });
+  return "\uFEFF"+lines.join("\r\n");
+}
+function exportCSV(){
+  if(!SCHEMA.length){ toast("請先建立欄位"); return; }
+  var headers=["_id","_owner","_createdAt","_updatedAt"].concat(SCHEMA.map(function(f){return f.key;}));
+  var name="資料匯出-"+dateStamp()+".csv";
+  download(name, buildCSV(headers), "text/csv");
+  toast("已匯出 CSV（Excel 相容）");
+}
+
+/* —— report.html 專用 CSV：純逗號分欄，欄位內容淨化 —— */
+function buildReportCSV(mapping){
+  mapping = mapping || {};
+  var headers=REPORT_HEADERS;
+  var lines=[];
+  lines.push(headers.join(","));
+  RECORDS.forEach(function(r, idx){
+    var arr=[];
+    headers.forEach(function(h){
+      var key=mapping[h] || "";
+      var v="";
+      if(key){ v=(r[key]==null?"":String(r[key])); }
+      if(h==="序號"){ v = (mapping["序號"] && v!=="") ? v : String(idx+1); }
+      if(REPORT_DATE_COLS[h]) v=dateStrOf(v);
+      arr.push(sanitizeReport(v, h));
+    });
+    lines.push(arr.join(","));
+  });
+  return "\uFEFF"+lines.join("\r\n");
+}
+function sanitizeReport(v, header){
+  var s=String(v==null?"":v);
+  if(header==="收貨站所") s=s.replace(/\r\n|\r|\n/g,"/");
+  else s=s.replace(/\r\n|\r|\n/g,"；");
+  s=s.replace(/,/g,"，").replace(/"/g,"”");
+  return s.replace(/\s+/g," ").trim();
+}
+
+/* ============================= 合併 ============================= */
+function readFileAsText(file){ return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){ res(String(r.result)); }; r.onerror=function(){ rej(new Error("讀取失敗")); }; r.readAsText(file,"UTF-8"); }); }
+
+function parseImportJSON(text, fileName){
+  var obj;
+  try{ obj=JSON.parse(text); }catch(e){ throw new Error(fileName+"：不是有效的 JSON（"+e.message+"）"); }
+  if(!obj || !Array.isArray(obj.records)) throw new Error(fileName+"：缺少 records 陣列，非本工具匯出格式");
+  if(!Array.isArray(obj.schema)) throw new Error(fileName+"：缺少 schema（非本工具匯出格式）");
+  return { schema:obj.schema, records:obj.records, meta:obj.meta||{}, owner:obj.meta&&obj.meta.owner||"" };
+}
+function cloneRecord(r){
+  var o={}; for(var k in r){ if(k==="_raw") continue; o[k]=r[k]; }
+  if(!o._id) o._id=uid();
+  if(!o._createdAt) o._createdAt=nowISO();
+  if(!o._updatedAt) o._updatedAt=o._createdAt;
+  return o;
+}
+function recDiff(a,b){
+  for(var k in b){ if(k==="_raw") continue; if(String(a[k]==null?"":a[k])!==String(b[k]==null?"":b[k])) return true; }
+  for(var k2 in a){ if(k2==="_raw") continue; if(a[k2]==null&&b[k2]==null) continue; if(String(b[k2]==null?"":b[k2])!==String(a[k2]==null?"":a[k2])) return true; }
+  return false;
+}
+
+var pendingMerge=null;
+async function startMerge(){
+  $("importMenu").classList.remove("open");
+  var pi=new Promise(function(res){ var inp=$("mergeFileInput"); inp.value=""; inp.onchange=function(){ res(inp.files); }; inp.click(); });
+  var files=await pi;
+  if(!files||!files.length) return;
+  var filings=[];
+  var errors=[];
+  for(var i=0;i<files.length;i++){
+    try{ var txt=await readFileAsText(files[i]); filings.push({ name:files[i].name, data:parseImportJSON(txt, files[i].name) }); }
+    catch(e){ errors.push(String(e.message)); }
+  }
+  if(errors.length){ showBanner("部分檔案無法解析："+errors.join(" ／ "),"warn"); }
+  if(!filings.length) return;
+  openMergeDialog(filings);
+}
+function openMergeDialog(filings){
+  var body=$("mergeBody"); body.innerHTML="";
+  var keys=[]; filings.forEach(function(ff){ ff.data.schema.forEach(function(f){ if(keys.indexOf(f.key)<0) keys.push(f.key); }); });
+  var chips=keys.map(function(k){ return "<label style='white-space:nowrap'><input type='checkbox' value='"+String(k).replace(/[<>&"]/g,"")+"' class='ddk'>"+String(k).replace(/[<>&"]/g,"")+"</label>"; }).join(" ");
+  var html="";
+  html+="<div class='chkrow'><b>疑似重複偵測（同一客戶可能被不同業務各自建檔）</b></div>";
+  html+="<div class='chkrow'>以欄位判重，勾選後「疑似重複」計數會即時更新（可複選，例：統編／公司名稱）："+chips+"</div>";
+  html+="<div class='chkrow'><label><input type='checkbox' id='mergeVerbose'> 合併完成後顯示詳細報表</label></div>";
+  html+="<div class='mergeSummary'><table><thead><tr><th>檔案</th><th>新增</th><th>更新(同識別碼)</th><th>相同(略過)</th><th class='dup'>疑似重複</th></tr></thead><tbody id='fileRows'>";
+  var totalAdd=0,totalUpd=0,totalSame=0;
+  filings.forEach(function(ff,i){
+    var c=computeFileCounts(ff.data.records);
+    html+="<tr data-idx='"+i+"'><td>"+String(ff.name).replace(/[<>&"]/g,"")+(ff.owner?"<span class='tag'>"+String(ff.owner).replace(/[<>&"]/g,"")+"</span>":"")+"</td><td class='ok'>+"+c.add+"</td><td class='upd'>"+c.upd+"</td><td>"+c.same+"</td><td class='dup dupCell'>0</td></tr>";
+    totalAdd+=c.add; totalUpd+=c.upd; totalSame+=c.same;
+  });
+  html+="<tr><td><b>合計</b></td><td class='ok'><b>"+totalAdd+"</b></td><td class='upd'><b>"+totalUpd+"</b></td><td><b>"+totalSame+"</b></td><td class='dup' id='dupTotal'><b>0</b></td></tr></tbody></table></div>";
+  html+="<div class='chkrow' style='margin-top:12px'><b>更新（同識別碼但內容不同）處理規則：</b></div>";
+  html+="<div class='chkrow'><select id='ruleUpd' class='fw'><option value='theirs'>以匯入檔覆寫（總部常用：業務更新回傳）</option><option value='mine'>保留我方（忽略匯入變更）</option><option value='both'>兩者並存（匯入檔視為新紀錄）</option></select></div>";
+  html+="<div class='chkrow'><b>疑似重複（同判重欄位值、不同識別碼）處理規則：</b></div>";
+  html+="<div class='chkrow'><select id='ruleDup' class='fw'><option value='newer'>併成一筆，保留較新內容與我方識別碼</option><option value='theirs'>併成一筆，以匯入檔覆寫內容</option><option value='mine'>併成一筆，保留我方內容</option><option value='both'>保留兩筆（不併）</option></select></div>";
+  html+="<div class='sys'>識別碼全程保留：同一業務再次匯出時會被判定為「更新」而非新增，避免重複建檔。不同業務對同一客戶各建一支紀錄時，可用判重欄位偵測並合併。</div>";
+  body.innerHTML=html;
+  Array.prototype.forEach.call(body.querySelectorAll(".ddk"), function(ch){ ch.onchange=refreshDupCells; });
+  refreshDupCells();
+  pendingMerge={ filings:filings };
+  openModal("mbMerge");
+}
+function selectedDedupKeys(){
+  return Array.prototype.slice.call(document.querySelectorAll("#mergeBody .ddk:checked")).map(function(c){ return c.value; });
+}
+function refreshDupCells(){
+  if(!pendingMerge) return;
+  var ddk=selectedDedupKeys();
+  var tot=0;
+  pendingMerge.filings.forEach(function(ff,fi){
+    var cell=document.querySelector("#fileRows tr[data-idx='"+fi+"'] .dupCell");
+    if(!cell) return;
+    var n=0;
+    ff.data.records.forEach(function(orig){
+      var rec=cloneRecord(orig);
+      var t=dupDetection(rec, null, ddk);
+      if(t && t._id!==rec._id) n++;
+    });
+    cell.innerHTML = n? ("<b class='dup'>"+n+"</b>") : "0";
+    tot+=n;
+  });
+  var tc=$("dupTotal"); if(tc) tc.innerHTML= tot? ("<b class='dup'>"+tot+"</b>") : "<b>0</b>";
+}
+function computeFileCounts(incoming){
+  var target={}; RECORDS.forEach(function(r){ target[r._id]=r; });
+  var add=0,upd=0,same=0;
+  for(var i=0;i<incoming.length;i++){
+    var rec=cloneRecord(incoming[i]);
+    var t=target[rec._id];
+    if(!t) add++;
+    else if(recDiff(t,rec)) upd++;
+    else same++;
+  }
+  return { add:add, upd:upd, same:same, dup:0 };
+}
+function dupDetection(rec, targetById, dedupKeys){
+  if(!dedupKeys.length) return null;
+  for(var i=0;i<RECORDS.length;i++){
+    var t=RECORDS[i];
+    if(t._id===rec._id) continue;
+    var all=true;
+    for(var j=0;j<dedupKeys.length;j++){ var k=dedupKeys[j]; var a=norm(rec[k]), b=norm(t[k]); if(a===""||b===""||a!==b){ all=false; break; } }
+    if(all) return t;
+  }
+  return null;
+}
+$("mergeApply").onclick=function(){
+  if(!pendingMerge) return;
+  var res=doMerge(pendingMerge.filings, selectedDedupKeys(), $("ruleUpd").value, $("ruleDup").value, $("mergeVerbose").checked);
+  closeModal("mbMerge");
+  pendingMerge=null;
+  renderAll(); scheduleSave();
+  toast("合併完成："+res.summary);
+  showBanner(res.summary+"　（已自動存入本機瀏覽器）"+(res.verbose?("　"+res.report.join(" ／ ")):""),"ok");
+};
+function doMerge(filings, ddk, ruleUpd, ruleDup, verbose){
+  var report=[];
+  var added=0,updated=0,sameSkipped=0,merged=0;
+  var targetById={}; RECORDS.forEach(function(r){ targetById[r._id]=r; });
+  filings.forEach(function(ff){
+    var nA=0,nU=0,nS=0,nM=0;
+    ff.data.records.forEach(function(orig){
+      var rec=cloneRecord(orig);
+      var t=targetById[rec._id];
+      if(t){
+        if(!recDiff(t,rec)){ nS++; sameSkipped++; return; }
+        if(ruleUpd==="mine"){ nS++; sameSkipped++; return; }
+        if(ruleUpd==="both"){
+          var nu=cloneRecord(orig); nu._id=uid(); nu._updatedAt=nowISO();
+          RECORDS.push(nu); targetById[nu._id]=nu; nA++; added++; return;
+        }
+        Object.keys(rec).forEach(function(k){ if(k==="_raw"||k==="_id"||k==="_createdAt") return; if(rec[k]===undefined) return; t[k]=String(rec[k]); });
+        t._updatedAt=rec._updatedAt||nowISO();
+        if(rec._owner) t._owner=rec._owner;
+        targetById[t._id]=t; nU++; updated++; return;
+      }
+      var dup=dupDetection(rec, targetById, ddk);
+      if(dup){
+        if(ruleDup==="both"){ rec._id=uid(); RECORDS.push(rec); targetById[rec._id]=rec; nA++; added++; return; }
+        var incomingNewer = (!dup._updatedAt || !rec._updatedAt) ? true : String(rec._updatedAt)>String(dup._updatedAt);
+        if(ruleDup==="mine"){ nS++; sameSkipped++; return; }
+        if(ruleDup==="theirs" || (ruleDup==="newer"&&incomingNewer)){
+          Object.keys(rec).forEach(function(k){ if(k==="_raw")return; if(k==="_id"||k==="_createdAt")return; if(rec[k]===undefined)return; dup[k]=String(rec[k]); });
+        }
+        dup._updatedAt = incomingNewer?(rec._updatedAt||nowISO()):dup._updatedAt;
+        targetById[dup._id]=dup; nM++; merged++; return;
+      }
+      RECORDS.push(rec); targetById[rec._id]=rec; nA++; added++;
+    });
+    report.push(ff.name+"：新增 "+nA+"、更新 "+nU+"、相同略過 "+nS+(ruleDup?"、併單 "+nM:""));
+  });
+  var msg="合併完成：新增 "+added+"、更新 "+updated+"、相同略過 "+sameSkipped+(merged?"、併單 "+merged:"");
+  return { added:added, updated:updated, sameSkipped:sameSkipped, merged:merged, report:report, summary:msg, verbose:!!verbose };
+}
+
+/* ============================= 匯入 ============================= */
+async function startRestore(){
+  $("importMenu").classList.remove("open");
+  var pi=new Promise(function(res){ var inp=$("restoreFileInput"); inp.value=""; inp.onchange=function(){ res(inp.files); }; inp.click(); });
+  var files=await pi;
+  if(!files||!files.length) return;
+  var text=await readFileAsText(files[0]);
+  var incoming;
+  try{ incoming=parseImportJSON(text, files[0].name); }
+  catch(e){ showBanner(e.message,"danger"); return; }
+  var ok=await modalYes("以「"+files[0].name+"」覆蓋目前所有資料？\n（現有 "+RECORDS.length+" 筆将全部被取代）","覆蓋");
+  if(!ok) return;
+  SCHEMA=incoming.schema.slice();
+  RECORDS=incoming.records.map(cloneRecord);
+  META=incoming.meta.tool?incoming.meta:META;
+  if(incoming.owner) OWNER=incoming.owner;
+  $("ownerName").value=OWNER;
+  renderAll(); renderFieldList(); scheduleSave();
+  toast("已覆蓋，共 "+RECORDS.length+" 筆");
+}
+
+async function startCsvImport(){
+  $("importMenu").classList.remove("open");
+  var pi=new Promise(function(res){ var inp=$("csvFileInput"); inp.value=""; inp.onchange=function(){ res(inp.files); }; inp.click(); });
+  var files=await pi;
+  if(!files||!files.length) return;
+  var text=await readFileAsText(files[0]);
+  var matrix;
+  try{ matrix=parseCSVText(text); }
+  catch(e){ showBanner("CSV 解析失敗："+e.message,"danger"); return; }
+  if(!matrix.length){ showBanner("CSV 為空","warn"); return; }
+  var headers=matrix[0];
+  openCsvMapModal(files[0].name, headers, matrix.slice(1));
+}
+function parseCSVText(text){
+  if(text.charCodeAt(0)===0xFEFF) text=text.slice(1);
+  var rows=[], cur=[], field="", inQ=false;
+  for(var i=0;i<text.length;i++){
+    var c=text[i];
+    if(inQ){
+      if(c==='"'){ if(text[i+1]==='"'){ field+='"'; i++; } else inQ=false; }
+      else field+=c;
+    }else{
+      if(c==='"'&&field==="") inQ=true;
+      else if(c===','){ cur.push(field); field=""; }
+      else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n') i++; cur.push(field); rows.push(cur); cur=[]; field=""; }
+      else field+=c;
+    }
+  }
+  if(field!==""||cur.length){ cur.push(field); rows.push(cur); }
+  while(rows.length && rows[rows.length-1].every(function(x){return String(x).trim()==="";})) rows.pop();
+  return rows;
+}
+function openCsvMapModal(name, headers, dataRows){
+  var body=$("mapTable"); body.innerHTML="";
+  var tr=document.createElement("tr");
+  var th1=document.createElement("th"); th1.textContent="CSV 欄位（第 1 列為表頭）"; tr.appendChild(th1);
+  var th2=document.createElement("th"); th2.textContent="對應到本工具欄位 key"; tr.appendChild(th2);
+  body.appendChild(tr);
+  var fieldKeys=[""].concat(SCHEMA.map(function(f){return f.key;})).concat(SYSTEM_KEYS);
+  var headerInfo={};
+  window._csvImport={ name:name, headers:headers, dataRows:dataRows, sel:[] };
+  var selCtrl=[];
+  for(var i=0;i<headers.length;i++){
+    var row=document.createElement("tr");
+    var td1=document.createElement("td"); td1.className="tval"; td1.textContent=headers[i]; row.appendChild(td1);
+    var td2=document.createElement("td");
+    var sel=document.createElement("select");
+    var zh=document.createElement("option"); zh.value=""; zh.textContent="（忽略此欄）"; sel.appendChild(zh);
+    fieldKeys.forEach(function(k){
+      var o=document.createElement("option"); o.value=k; o.textContent=k?k:"";
+      if(k && (strip(headers[i])===k || (findField(k)&&strip(headers[i])===findField(k).label))) o.selected=true;
+      sel.appendChild(o);
+    });
+    selCtrl.push(sel); td2.appendChild(sel); row.appendChild(td2);
+    body.appendChild(row);
+  }
+  $("mapTitle").textContent="匯入 CSV：「"+name+"」欄位對應";
+  var extra=$("mapExtra"); extra.innerHTML="";
+  var cb=document.createElement("label");
+  var chk=document.createElement("input"); chk.type="checkbox"; chk.id="csvSkipEmpty";
+  cb.appendChild(chk); cb.appendChild(document.createTextNode(" 跳過整列皆空的資料列"));
+  extra.appendChild(cb);
+  $("mapApply").textContent="匯入";
+  $("mapApply").onclick=function(){
+    var map=[]; selCtrl.forEach(function(s,i){ var k=s.value; if(k) map.push({ csv:i, key:k }); });
+    var skip=$("csvSkipEmpty").checked;
+    var added=0;
+    dataRows.forEach(function(row){
+      var rec={ _id:uid(), _owner:OWNER||"(未設定)", _createdAt:nowISO(), _updatedAt:nowISO() };
+      var any=false;
+      map.forEach(function(m){ var v=row[m.csv]===undefined?"":strip(String(row[m.csv])); if(v!=="") any=true; rec[m.key]=v; });
+      if(any) { RECORDS.push(rec); added++; }
+      else if(!skip){ RECORDS.push(rec); added++; }
+    });
+    closeModal("mbMap"); renderAll(); scheduleSave();
+    toast("已由 CSV 新增 "+added+" 筆紀錄");
+  };
+  openModal("mbMap");
+}
+
+/* ============================= report.html CSV 對應 ============================= */
+$("exportMenu").querySelectorAll("button").forEach(function(btn){
+  btn.onclick=function(){
+    $("exportMenu").classList.remove("open");
+    var act=btn.dataset.act;
+    if(act==="json") exportJSON();
+    else if(act==="csv") exportCSV();
+    else if(act==="report") openReportMap();
+  };
+});
+function openReportMap(){
+  if(!RECORDS.length){ toast("尚無資料可匯出"); return; }
+  var body=$("mapTable"); body.innerHTML="";
+  var tr=document.createElement("tr");
+  var th1=document.createElement("th"); th1.textContent="report.html 欄位（固定）"; tr.appendChild(th1);
+  var th2=document.createElement("th"); th2.textContent="對應本工具欄位（可留空＝輸出空白）"; tr.appendChild(th2);
+  body.appendChild(tr);
+  var selCtrl=[];
+  REPORT_HEADERS.forEach(function(h){
+    var row=document.createElement("tr");
+    var td1=document.createElement("td"); td1.className="tval"; td1.textContent=h; row.appendChild(td1);
+    var td2=document.createElement("td");
+    var sel=document.createElement("select");
+    var zo=document.createElement("option"); zo.value=""; zo.textContent="（輸出空白）"; sel.appendChild(zo);
+    SCHEMA.forEach(function(f){
+      var o=document.createElement("option"); o.value=f.key; o.textContent=(f.label||f.key)+" (key:"+f.key+")";
+      if(strip(h)===f.key || strip(h)===f.label) o.selected=true;
+      sel.appendChild(o);
+    });
+    selCtrl.push(sel); td2.appendChild(sel); row.appendChild(td2);
+    body.appendChild(row);
+  });
+  $("mapTitle").textContent="匯出 CSV（供 report.html 分析）— 欄位對應";
+  $("mapExtra").innerHTML="<div class='sys'>日期欄自動輸出 YYYY-MM-DD；每欄內容自動淨化（逗號→全形、換行→分段、引號→全形），符合 report.html 的純逗號分欄解析。合併後由總部匯出，直接拖進 report.html 即可。</div>";
+  $("mapApply").textContent="匯出";
+  var fn=$("mapApply").onclick;
+  $("mapApply").onclick=function(){
+    var mapping={};
+    REPORT_HEADERS.forEach(function(h,i){ var k=selCtrl[i].value; if(k) mapping[h]=k; });
+    var csv=buildReportCSV(mapping);
+    download("report-csv-"+dateStamp()+".csv", csv, "text/csv");
+    closeModal("mbMap");
+    toast("已匯出 report.html 相容 CSV");
+  };
+  openModal("mbMap");
+}
+$("mapApply").onclick=function(){ /* 覆寫於 openCsvMapModal / openReportMap */ };
+
+/* ============================= 選單開關 ============================= */
+["btnImportMenu","btnExportMenu"].forEach(function(id){
+  $(id).onclick=function(){
+    var menuId = id==="btnImportMenu"?"importMenu":"exportMenu";
+    var m=$(menuId);
+    var other = id==="btnImportMenu"?"exportMenu":"importMenu";
+    $(other).classList.remove("open");
+    m.classList.toggle("open");
+  };
+});
+document.addEventListener("click", function(e){
+  if(!e.target.closest(".menuWrap")){ $("importMenu").classList.remove("open"); $("exportMenu").classList.remove("open"); }
+});
+
+/* ============================= 其它工具列 ============================= */
+// 產生「含資料」自帶副本：以原始殼層為底，清除執行期動態節點，再嵌入資料。
+function buildSelfCopyHTML(){
+  var clone=document.documentElement.cloneNode(true);
+  // 1) 移除執行期才插入的節點（避免副本開啟後重複插入）
+  Array.prototype.forEach.call(clone.querySelectorAll("[data-runtime]"), function(n){ if(n.parentNode) n.parentNode.removeChild(n); });
+  // 2) 清空動態渲染容器（開啟時會重新產生）
+  ["thead","tbody","pager","fieldList","recForm","mergeBody","mapTable","mapExtra","stats","banner","toast"].forEach(function(id){
+    var e=clone.querySelector("#"+id); if(!e) return;
+    e.innerHTML="";
+    if(id==="banner"||id==="toast"){ e.style.display="none"; e.className=(id==="toast"?"toast":"banner"); }
+  });
+  var empty=clone.querySelector("#empty"); if(empty) empty.style.display="none";
+  Array.prototype.forEach.call(clone.querySelectorAll(".modalBack.open"), function(m){ m.classList.remove("open"); });
+  // 3) 嵌入資料（純文字放入 div，序列化時會自動跳脫 < > &，安全）
+  var dataEl=clone.querySelector("#datahtml-data");
+  if(!dataEl){ dataEl=document.createElement("div"); dataEl.id="datahtml-data"; dataEl.hidden=true; var bd=clone.querySelector("body"); bd.insertBefore(dataEl, bd.firstChild); }
+  dataEl.textContent = JSON.stringify(stateObj());
+  return "<!DOCTYPE html>\n" + clone.outerHTML;
+}
+$("btnSaveCopy").onclick=function(){
+  if(!RECORDS.length){ toast("尚無資料可存"); return; }
+  saveToStorage();
+  download("資料含資料-"+dateStamp()+".html", buildSelfCopyHTML(), "text/html");
+  toast("已存檔含資料副本（可攜帶至任何裝置離線開啟）");
+};
+$("btnReset").onclick=function(){
+  modalYes("清除本機已記憶的資料？下次開啟將回到空白。既有檔案／副本不受影響。","清除").then(function(ok){
+    if(!ok) return;
+    clearMemory(); SCHEMA=[]; RECORDS=[]; OWNER=""; FILTER={q:"",owner:""}; PAGE=0;
+    $("ownerName").value="";
+    renderAll(); toast("已清除記憶");
+    location.reload();
+  });
+};
+$("btnTheme").onclick=function(){
+  var h=document.documentElement;
+  h.setAttribute("data-theme", h.getAttribute("data-theme")==="dark"?"light":"dark");
+  try{ localStorage.setItem(LS_PREFIX+"theme", h.getAttribute("data-theme")); }catch(e){}
+};
+$("btnPrint").onclick=function(){ window.print(); };
+$("ownerName").oninput=function(){ OWNER=strip($("ownerName").value); try{ localStorage.setItem(LS_PREFIX+"owner", OWNER); }catch(e){} };
+
+/* ============================= 初始化 ============================= */
+function init(){
+  try{
+    var theme=localStorage.getItem(LS_PREFIX+"theme");
+    if(theme) document.documentElement.setAttribute("data-theme", theme);
+    var o=localStorage.getItem(LS_PREFIX+"owner");
+    if(o){ OWNER=o; $("ownerName").value=o; }
+  }catch(e){}
+  var emb=null;
+  try{
+    var del=document.getElementById("datahtml-data");
+    if(del && del.textContent && del.textContent.trim()) emb=JSON.parse(del.textContent);
+  }catch(e){ emb=null; }
+  if(!emb) emb=window.EMBEDDED_DATA || null;
+  if(emb) window.EMBEDDED_DATA = emb;
+  var loaded=loadFromStorage();
+  if(emb && Array.isArray(emb.records)){
+    SCHEMA=Array.isArray(emb.schema)?emb.schema:SCHEMA;
+    RECORDS=emb.records.map(cloneRecord);
+    META=emb.meta||META;
+    if(emb.owner) OWNER=emb.owner;
+    $("ownerName").value=OWNER;
+    backfillSerial();
+    renderAll(); renderFieldList(); scheduleSave();
+    showBanner("此為「含資料」副本，已自動載入 "+RECORDS.length+" 筆紀錄（並存入本機瀏覽器）。","ok");
+    return;
+  }
+  if(loaded){
+    backfillSerial();
+    renderAll(); renderFieldList();
+    if(RECORDS.length) showBanner("已從本機瀏覽器記憶還原 "+RECORDS.length+" 筆資料（此瀏覽器先前使用）。","");
+  }else renderAll();
+}
+function boot(){ init(); }
+if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",boot);
+else boot();
+
+if(window.__DT_TEST__){
+  window.__DT_TEST__ = {
+    state: function(){ return stateObj(); },
+    saveState: saveToStorage, loadState: loadFromStorage, clearStorage: clearMemory,
+    applyTemplate: function(){ SCHEMA = schemaFromTemplate(); },
+    setOwner: function(n){ OWNER=n; },
+    getOwner: function(){ return OWNER; },
+    nextSerial: nextSerial, backfill: backfillSerial,
+    selfCopy: buildSelfCopyHTML,
+    makeRec: makeRec,
+    addRec: function(v){ RECORDS.push(makeRec(v)); },
+    pushRec: function(r){ RECORDS.push(r); },
+    getRecords: function(){ return RECORDS; },
+    setRecords: function(list){ RECORDS=list; },
+    reportCSV: buildReportCSV,
+    parseJSON: parseImportJSON,
+    sanitize: sanitizeReport,
+    csvParse: parseCSVText,
+    csvEscape: csvEscape,
+    clone: cloneRecord,
+    diff: recDiff,
+    dedup: dupDetection,
+    doMerge: doMerge,
+    render: renderAll,
+    dateStamp: dateStamp
+  };
+}
+})();
+</script>
+</body>
+</html>
