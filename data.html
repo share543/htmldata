@@ -1144,6 +1144,16 @@ function openCsvMapModal(name, headers, dataRows){
 }
 
 /* ============================= report.html CSV 對應 ============================= */
+/* 匯入選單接線（原本三個按鈕都沒有 onclick，導致「合併 JSON／匯入 JSON／匯入 CSV」按了完全沒反應） */
+$("importMenu").querySelectorAll("button").forEach(function(btn){
+  btn.onclick=function(){
+    $("importMenu").classList.remove("open");
+    var act=btn.dataset.act;
+    if(act==="merge") startMerge();
+    else if(act==="restore") startRestore();
+    else if(act==="csv") startCsvImport();
+  };
+});
 $("exportMenu").querySelectorAll("button").forEach(function(btn){
   btn.onclick=function(){
     $("exportMenu").classList.remove("open");
