@@ -148,7 +148,7 @@ legend{font-size:12px;color:var(--muted);padding:0 6px}
     <button class="btn primary" id="btnNew">＋ 新增紀錄</button>
     <button class="btn danger" id="btnDel">刪除(<span id="delCount">0</span>)</button>
     <span class="sep"></span>
-    <div class="menuWrap">
+    <div class="menuWrap" id="fieldMenuWrap">
       <button class="btn" id="btnManage">⚙ 欄位管理</button>
       <button class="btn" id="btnTemplate">範本</button>
     </div>
@@ -374,6 +374,14 @@ function backfillSerial(){
   }
   if(changed) scheduleSave();
 }
+/* 把所有流水號重新編成一 1..N（依目前 RECORDS 順序）。
+   供合併後手動使用 —— 各站所各自從 1 起算，合併後難免重複。
+   刻意不動 _updatedAt：序號只是顯示標籤，不應讓每筆紀錄都看起來被編輯過。 */
+function renumberSerial(){
+  var sk=serialKey(); if(!sk) return 0;
+  for(var i=0;i<RECORDS.length;i++){ RECORDS[i][sk]=String(i+1); }
+  return RECORDS.length;
+}
 
 /* ============================= 小工具 ============================= */
 function $(id){ return document.getElementById(id); }
@@ -473,6 +481,15 @@ function scheduleSave(){
   if(saveTimer) clearTimeout(saveTimer);
   saveTimer=setTimeout(function(){ saveToStorage(); }, 350);
 }
+/* 去抖動期間若關閉／切換分頁，350ms 內的最後一筆異動會遺失。
+   beforeunload（桌面）與 pagehide（行動瀏覽器較可靠）都補寫一次。 */
+function flushPendingSave(){
+  if(!dirty) return;
+  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
+  saveToStorage();
+}
+window.addEventListener("beforeunload", flushPendingSave);
+window.addEventListener("pagehide", flushPendingSave);
 
 /* ============================= 紀錄操作 ============================= */
 function findField(key){ if(!key) return null; for(var i=0;i<SCHEMA.length;i++) if(SCHEMA[i].key===key) return SCHEMA[i]; return null; }
@@ -525,7 +542,7 @@ function renderTable(){
   thead.innerHTML=""; tbody.innerHTML="";
   var tr=document.createElement("tr");
   var th0=document.createElement("th"); th0.className="cb";
-  var all=document.createElement("input"); all.type="checkbox"; all.id="chkAll"; all.onclick=function(){ var rows=filtered(); (rows.length? rows:[]).forEach(function(r){ if(all.checked) SEL[r._id]=1; else delete SEL[r._id]; }); renderTable(); renderSelectButtons(); };
+  var all=document.createElement("input"); all.type="checkbox"; all.id="chkAll"; all.onclick=function(){ var rows=filtered(); rows.forEach(function(r){ if(all.checked) SEL[r._id]=1; else delete SEL[r._id]; }); renderTable(); renderSelectButtons(); };
   th0.appendChild(all); tr.appendChild(th0);
   for(var i=0;i<SCHEMA.length;i++){
     var th=document.createElement("th"); th.id="hdr-"+SCHEMA[i].key;
@@ -549,7 +566,7 @@ function renderTable(){
       if(SEL[rec._id]) rt.className="selected";
       var td0=document.createElement("td"); td0.className="cb";
       var cb=document.createElement("input"); cb.type="checkbox"; cb.checked=!!SEL[rec._id];
-      cb.onclick=function(e){ e.stopPropagation(); if(cb.checked) SEL[rec._id]=1; else delete SEL[rec._id]; renderSelectButtons(); rt.classList.toggle("selected",!!SEL[rec._id]); };
+      cb.onclick=function(e){ e.stopPropagation(); if(cb.checked) SEL[rec._id]=1; else delete SEL[rec._id]; renderSelectButtons(); rt.classList.toggle("selected",!!SEL[rec._id]); syncHeaderCheckbox(); };
       td0.appendChild(cb); rt.appendChild(td0);
       for(var i=0;i<SCHEMA.length;i++){
         var td=document.createElement("td");
@@ -570,6 +587,17 @@ function renderTable(){
       tbody.appendChild(rt);
     })(rows[r]);
   }
+  syncHeaderCheckbox();
+}
+/* 表頭全選的勾選狀態必須跟上個別列的勾選（含半選狀態） */
+function syncHeaderCheckbox(){
+  var all=$("chkAll"); if(!all) return;
+  var rows=filtered();
+  if(!rows.length){ all.checked=false; all.indeterminate=false; return; }
+  var sel=0;
+  for(var i=0;i<rows.length;i++) if(SEL[rows[i]._id]) sel++;
+  all.checked = (sel===rows.length);
+  all.indeterminate = (sel>0 && sel<rows.length);
 }
 function renderPager(){
   var rows=filtered();
@@ -579,9 +607,10 @@ function renderPager(){
   info.textContent="第 "+(PAGE+1)+" / "+tp+" 頁，共 "+rows.length+" 筆（每頁 "+PAGE_SIZE+"）";
   box.appendChild(info);
   function pgBtn(label, page, opts){
-    var b=document.createElement("span"); b.className="pg"; b.textContent=label;
-    if(page<0||page>=tp) b.style.opacity=.4;
-    b.onclick=function(){ if(page<0||page>=tp) return; PAGE=page; renderTable(); renderPager(); };
+    var b=document.createElement("button"); b.type="button"; b.className="pg"; b.textContent=label;
+    var out=(page<0||page>=tp);
+    b.disabled=out;
+    b.onclick=function(){ if(out) return; PAGE=page; renderTable(); renderPager(); };
     return b;
   }
   box.appendChild(pgBtn("‹", PAGE-1));
@@ -749,7 +778,17 @@ function inputFor(f, value){
   } else if(f.type==="date"){
     inp=document.createElement("input"); inp.type="date"; inp.className="fw"; inp.value=dateStrOf(v)||""; inp.dataset.k=f.key;
   } else if(f.type==="number"){
-    inp=document.createElement("input"); inp.type="number"; inp.className="fw"; inp.value=String(v); inp.dataset.k=f.key;
+    var numStr=String(v==null?"":v).trim();
+    var isNum=(numStr==="" || /^[+-]?(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/.test(numStr));
+    inp=document.createElement("input"); inp.className="fw"; inp.value=numStr; inp.dataset.k=f.key;
+    if(isNum){ inp.type="number"; }
+    else{
+      /* 既有值不是數字（例：CSV 匯入的「5~10件/天」）。若仍用 <input type=number>，
+         瀏覽器會顯示空白，儲存時就把原值清成空字串 —— 改用文字輸入保住原值。 */
+      inp.type="text";
+      inp.setAttribute("data-number-invalid","1");
+      inp.title="原值不是數字，已改用文字輸入以免遺失";
+    }
   } else if(f.type==="textarea"){
     inp=document.createElement("textarea"); inp.className="fw"; inp.rows=4; inp.value=String(v); inp.dataset.k=f.key;
   } else if(f.type==="select"){
@@ -848,7 +887,7 @@ searchInput.oninput=function(){ FILTER.q=searchInput.value; PAGE=0; renderTable(
 var ownerSelect=document.createElement("select"); ownerSelect.id="ownerFilter"; ownerSelect.style.maxWidth="150px";
 ownerSelect.classList.add("tmpq"); ownerSelect.setAttribute("data-runtime","1");
 ownerSelect.onchange=function(){ FILTER.owner=ownerSelect.value; PAGE=0; renderTable(); renderPager(); };
-(function(){ var t=$("btnManage"); t.parentNode.insertBefore(ownerSelect, t); })();
+(function(){ var t=$("fieldMenuWrap"); t.parentNode.insertBefore(ownerSelect, t); })();
 
 $("btnDel").onclick=function(){
   var ids=Object.keys(SEL);
@@ -979,10 +1018,12 @@ function openMergeDialog(filings){
     totalAdd+=c.add; totalUpd+=c.upd; totalSame+=c.same;
   });
   html+="<tr><td><b>合計</b></td><td class='ok'><b>"+totalAdd+"</b></td><td class='upd'><b>"+totalUpd+"</b></td><td><b>"+totalSame+"</b></td><td class='dup' id='dupTotal'><b>0</b></td></tr></tbody></table></div>";
+  html+="<div class='chkrow' id='schemaDiff'></div>";
   html+="<div class='chkrow' style='margin-top:12px'><b>更新（同識別碼但內容不同）處理規則：</b></div>";
   html+="<div class='chkrow'><select id='ruleUpd' class='fw'><option value='theirs'>以匯入檔覆寫（總部常用：業務更新回傳）</option><option value='mine'>保留我方（忽略匯入變更）</option><option value='both'>兩者並存（匯入檔視為新紀錄）</option></select></div>";
   html+="<div class='chkrow'><b>疑似重複（同判重欄位值、不同識別碼）處理規則：</b></div>";
   html+="<div class='chkrow'><select id='ruleDup' class='fw'><option value='newer'>併成一筆，保留較新內容與我方識別碼</option><option value='theirs'>併成一筆，以匯入檔覆寫內容</option><option value='mine'>併成一筆，保留我方內容</option><option value='both'>保留兩筆（不併）</option></select></div>";
+  html+="<div class='chkrow'><label><input type='checkbox' id='mergeRenumber'> 合併後重新編號流水號（由 1 開始，依目前資料順序；預設不勾選，以免改變各站所原編號）</label></div>";
   html+="<div class='sys'>識別碼全程保留：同一業務再次匯出時會被判定為「更新」而非新增，避免重複建檔。不同業務對同一客戶各建一支紀錄時，可用判重欄位偵測並合併。</div>";
   body.innerHTML=html;
   // 判重欄位清單以 DOM API 建立：這些 key 來自匯入檔（他人檔案），
@@ -995,6 +1036,25 @@ function openMergeDialog(filings){
     chipBox.appendChild(lab); chipBox.appendChild(document.createTextNode(" "));
   });
   Array.prototype.forEach.call(body.querySelectorAll(".ddk"), function(ch){ ch.onchange=refreshDupCells; });
+  // 欄位結構差異提示：key 來自匯入檔（他人檔案），一律用 textContent 寫入
+  var myKeys=SCHEMA.map(function(f){ return f.key; });
+  var allTheirs=[];
+  filings.forEach(function(ff){ ff.data.schema.forEach(function(f){ if(allTheirs.indexOf(f.key)<0) allTheirs.push(f.key); }); });
+  var onlyTheirs=allTheirs.filter(function(k){ return myKeys.indexOf(k)<0; });
+  var onlyMine=myKeys.filter(function(k){ return allTheirs.indexOf(k)<0; });
+  var diffBox=body.querySelector("#schemaDiff");
+  diffBox.style.display="block";
+  var mineNote = onlyMine.length
+    ? "　我方有、匯入檔沒有的欄位（"+onlyMine.length+"）"+onlyMine.join("、")+"（這些欄位在匯入紀錄中會是空的）。"
+    : "";
+  if(onlyTheirs.length){
+    diffBox.style.color="var(--warn)";
+    diffBox.textContent = "⚠ 欄位結構不同：匯入檔有、我方沒有的欄位（"+onlyTheirs.length+"）"+onlyTheirs.join("、")
+      +"。這些值會存進紀錄，但我方沒有對應的欄位定義，畫面不會顯示、也不會出現在 report.html 匯出；建議先用「欄位管理」補上。"+mineNote;
+  } else {
+    diffBox.style.color="var(--muted)";
+    diffBox.textContent = "欄位結構與匯入檔一致（"+myKeys.length+" 欄）。"+mineNote;
+  }
   refreshDupCells();
   pendingMerge={ filings:filings };
   openModal("mbMerge");
@@ -1055,12 +1115,14 @@ function dupDetection(rec, targetById, dedupKeys){
 }
 $("mergeApply").onclick=function(){
   if(!pendingMerge) return;
+  var wantRenumber = $("mergeRenumber") && $("mergeRenumber").checked;
   var res=doMerge(pendingMerge.filings, selectedDedupKeys(), $("ruleUpd").value, $("ruleDup").value, $("mergeVerbose").checked);
+  var renumbered = wantRenumber ? renumberSerial() : 0;
   closeModal("mbMerge");
   pendingMerge=null;
   renderAll(); scheduleSave();
   toast("合併完成："+res.summary);
-  showBanner(res.summary+"　（已自動存入本機瀏覽器）"+(res.verbose?("　"+res.report.join(" ／ ")):""),"ok");
+  showBanner(res.summary+"　（已自動存入本機瀏覽器）"+(renumbered?("　流水號已重新編號 1–"+renumbered):"")+(res.verbose?("　"+res.report.join(" ／ ")):""),"ok");
 };
 function doMerge(filings, ddk, ruleUpd, ruleDup, verbose){
   var report=[];

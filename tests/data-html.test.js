@@ -17,7 +17,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { JSDOM } = require("jsdom");
+const { JSDOM, VirtualConsole } = require("jsdom");
 
 const DATA_HTML = path.join(__dirname, "..", "data.html");
 const TEST_FLAG = '<script>window.__DT_TEST__ = true;</script>\n';
@@ -43,12 +43,19 @@ async function until(fn, ms = 3000) {
   }
 }
 
+/** 頁面內未捕捉的錯誤。事件處理器拋錯時瀏覽器不會中斷，jsdom 會用
+ *  jsdomError 回報 —— 這種「靜默失敗」正是最難查的一類，所以一律收集。 */
+const pageErrors = [];
+
 /** 載入一份 data.html（可選擇是否注入測試旗標） */
 async function loadPage(html, url) {
+  const vc = new VirtualConsole();
+  vc.on("jsdomError", (e) => pageErrors.push(e && e.message ? e.message : String(e)));
   const dom = new JSDOM(html, {
     runScripts: "dangerously",
     url: url || "https://example.test/data.html",
     pretendToBeVisual: true,
+    virtualConsole: vc,
   });
   const w = dom.window;
   await new Promise((res) => (w.document.readyState === "complete" ? res() : w.addEventListener("load", res)));
@@ -77,28 +84,49 @@ async function main() {
     process.exit(3);
   }
 
-  /** 以真實 UI 開啟合併對話框（模擬使用者選檔） */
+  /** 關掉所有還開著的 modal。對話框是共用元素，若前一個測試忘了關（例如只是檢視、
+   *  沒按套用），下一個測試的「等對話框開啟」會立刻成立而讀到殘留內容 ——
+   *  這是確定性測試的必要前置。 */
+  function closeAllOpenModals() {
+    Array.from(d.querySelectorAll(".modalBack.open")).forEach((m) => m.classList.remove("open"));
+  }
+
+  /** 以真實 UI 開啟合併對話框（模擬使用者選檔），並等到內容確實是這一批檔案 */
   async function openMergeViaUI(filings) {
     const inp = d.getElementById("mergeFileInput");
     inp.click = function () {};                       // 阻止 jsdom 開檔對話框
+    inp.onchange = null;                              // 丟掉前一次未完成的 resolver
+    closeAllOpenModals();
     d.querySelector('#importMenu button[data-act="merge"]').click();
     const files = filings.map((f) => new w.File([JSON.stringify(f.data)], f.name, { type: "application/json" }));
     Object.defineProperty(inp, "files", { value: files, configurable: true });
     inp.dispatchEvent(new w.Event("change"));
-    return until(() => d.getElementById("mbMerge").classList.contains("open"));
+    const opened = await until(() => d.getElementById("mbMerge").classList.contains("open"));
+    // 讀檔是非同步的，光「開著」不夠 —— 必須等到列出的檔案正是這一批
+    const filled = await until(() => {
+      const rows = Array.from(d.querySelectorAll("#fileRows tr[data-idx]"));
+      return rows.length === filings.length &&
+        rows.every((tr, i) => tr.cells[0].textContent.indexOf(filings[i].name) === 0);
+    });
+    return opened && filled;
   }
 
-  /** 以真實 UI 開啟 CSV 匯入對應對話框 */
-  async function openCsvViaUI(csvText) {
+  /** 以真實 UI 開啟 CSV 匯入對應對話框，並等到標題確實是這支檔案 */
+  async function openCsvViaUI(csvText, fileName) {
+    const name = fileName || "x.csv";
     const inp = d.getElementById("csvFileInput");
     inp.click = function () {};
+    inp.onchange = null;
+    closeAllOpenModals();
     d.querySelector('#importMenu button[data-act="csv"]').click();
     Object.defineProperty(inp, "files", {
-      value: [new w.File([csvText], "x.csv", { type: "text/csv" })],
+      value: [new w.File([csvText], name, { type: "text/csv" })],
       configurable: true,
     });
     inp.dispatchEvent(new w.Event("change"));
-    return until(() => d.getElementById("mbMap").classList.contains("open"));
+    const opened = await until(() => d.getElementById("mbMap").classList.contains("open"));
+    const titled = await until(() => d.getElementById("mapTitle").textContent.indexOf(name) >= 0);
+    return opened && titled;
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -196,6 +224,7 @@ async function main() {
     check("判重 checkbox 的 value 應完整等於原始 key",
       cb && cb.value === evil && cb.getAttribute("value") === evil,
       `value = ${JSON.stringify(cb && cb.value)}`);
+    closeAllOpenModals();                             // 只是檢視，不按套用 → 自行收拾
   } catch (e) { check("T4 執行", false, e.message); }
 
   /* ══════════════════════════════════════════════════════════
@@ -316,6 +345,12 @@ async function main() {
     T.clearStorage();
     T.applyTemplate();
     T.setRecords([]);
+    const t0 = Date.now();
+    const opens = [];
+    const mo = new w.MutationObserver(() => {
+      if (d.getElementById("mbMerge").classList.contains("open")) opens.push(Date.now() - t0);
+    });
+    mo.observe(d.getElementById("mbMerge"), { attributes: true, attributeFilter: ["class"] });
     await openMergeViaUI([{ name: "x.json", data: { schema: schemaOf("統編"), records: [rec("n1", "統編", "99999999")] } }]);
     const cb = d.querySelector("#mergeBody .ddk");
     cb.checked = true;
@@ -327,6 +362,8 @@ async function main() {
     await sleep(700);                                  // 超過 350 ms 的去抖動存檔
     check("合併提示在自動存檔後仍可見", banner.style.display !== "none",
       `按下後 display = ${rightAfter}、700 ms 後 display = ${banner.style.display}`);
+    check("套用合併後對話框應關閉", !d.getElementById("mbMerge").classList.contains("open"),
+      `開啟中的 modal 數 = ${d.querySelectorAll(".modalBack.open").length}`);
   } catch (e) { check("T8 執行", false, e.message); }
 
   /* ══════════════════════════════════════════════════════════
@@ -341,6 +378,7 @@ async function main() {
     const bad = ["_id", "_owner", "_createdAt", "_updatedAt"].filter((k) => vals.includes(k));
     check("不得提供系統欄位", bad.length === 0, `仍提供: ${JSON.stringify(bad)}`);
     check("仍提供一般資料欄位", vals.includes("公司名稱"), `選項數 = ${vals.length}`);
+    closeAllOpenModals();                             // 只是檢視，不按匯入 → 自行收拾
   } catch (e) { check("T9 執行", false, e.message); }
 
   /* ══════════════════════════════════════════════════════════
@@ -375,6 +413,225 @@ async function main() {
       cd.querySelectorAll(".tmpq").length === 2, `.tmpq = ${cd.querySelectorAll(".tmpq").length}`);
     copy.dom.window.close();
   } catch (e) { check("T10 執行", false, e.message); }
+
+  /* ══════════════════════════════════════════════════════════
+     T11 report.html CSV 契約（只驗本側；跨 repo 的 e2e 見 TECHNICAL 10.3）
+     report.html 以純逗號分欄、並依精確表頭取值，所以輸出不得出現逗號、
+     引號或換行，且欄數必須恆為 25。
+     ══════════════════════════════════════════════════════════ */
+  section("T11 report.html CSV 契約");
+  try {
+    const HEADERS = ["序號", "客代", "統編", "公司名稱", "收件地址", "聯絡窗口", "聯絡電話", "聯絡信箱", "開發者", "課別", "收貨站所", "日均量體", "預估營收/月", "商品類別", "填單日期", "初步接洽", "需求確認", "報價", "簽約", "導入", "結案", "說明", "洽談內容", "類別", "甲指成功轉甲配"];
+    const DATE_COLS = new Set(["填單日期", "初步接洽", "需求確認", "報價", "簽約", "導入"]);
+
+    T.applyTemplate();
+    T.setRecords([]);
+    T.addRec({ 公司名稱: 'A,B"C\nD', 說明: "x\ny", 收貨站所: "甲\n乙", 填單日期: "2026-09-03", 洽談內容: "3/13 拜訪; 3/14 電聯" });
+    T.addRec({ 公司名稱: "", 說明: "", 收貨站所: "" });
+
+    const keys = new Set(T.state().schema.map((f) => f.key));
+    const mapping = {};
+    HEADERS.forEach((h) => { if (keys.has(h)) mapping[h] = h; });
+    const csv = T.reportCSV(mapping);
+    const lines = csv.split("\r\n");
+    const headerCells = lines[0].replace("\uFEFF", "").split(",");
+
+    check("輸出以 BOM 開頭", csv.charCodeAt(0) === 0xfeff, `code = ${csv.charCodeAt(0)}`);
+    check("表頭恰為 25 欄且名稱正確", headerCells.length === 25 && headerCells.join("|") === HEADERS.join("|"), `欄數 = ${headerCells.length}`);
+    const bad = lines.slice(1).filter((l) => l.split(",").length !== 25);
+    check("每一列的欄數皆為 25（分隔符未被內容破壞）", bad.length === 0, `異常列數 = ${bad.length}`);
+    check("輸出不得包含雙引號", !csv.includes('"'), "");
+    const cells = lines.slice(1).flatMap((l) => l.split(","));
+    check("儲存格不得含換行", !cells.some((c) => /[\r\n]/.test(c)), "");
+    const dateCells = lines.slice(1).flatMap((l) => l.split(",").filter((c, i) => DATE_COLS.has(HEADERS[i])));
+    check("日期欄輸出 YYYY-MM-DD 或空值", dateCells.every((c) => c === "" || /^\d{4}-\d{2}-\d{2}$/.test(c)), JSON.stringify(dateCells.slice(0, 4)));
+    check("淨化：收貨站所換行轉斜線", lines[1].split(",")[HEADERS.indexOf("收貨站所")] === "甲/乙", lines[1].split(",")[HEADERS.indexOf("收貨站所")]);
+    check("淨化：其余欄位換行轉全形分號", lines[1].split(",")[HEADERS.indexOf("說明")] === "x；y", lines[1].split(",")[HEADERS.indexOf("說明")]);
+  } catch (e) { check("T11 執行", false, e.message); }
+
+  /* ══════════════════════════════════════════════════════════
+     T12 合併後可選擇重新編號流水號（預設不變）
+     ══════════════════════════════════════════════════════════ */
+  section("T12 合併後重新編號流水號");
+  try {
+    const schema = schemaOf("統編", "序號");
+    schema[1].type = "serial";
+    const mk = (id, tax, serial) => ({ _id: id, _owner: "A", _createdAt: "2026-01-01 00:00", _updatedAt: "2026-01-01 00:00", 統編: tax, 序號: serial });
+    const filings = [
+      { name: "a.json", data: { schema, records: [mk("a1", "11111111", "1"), mk("a2", "22222222", "2")] } },
+      { name: "b.json", data: { schema, records: [mk("b1", "33333333", "1"), mk("b2", "44444444", "2")] } },
+    ];
+
+    // (a) 預設不勾選 → 保留各站所原編號（可能重複）
+    check("開啟合併對話框前沒有任何開啟中的 modal", d.querySelectorAll(".modalBack.open").length === 0,
+      `開啟中的 modal = ${Array.from(d.querySelectorAll(".modalBack.open")).map((m) => m.id).join(",") || "（無）"}`);
+    T.clearStorage();
+    T.setRecords([]);
+    for (const f of filings[0].data.schema) T.state().schema.push(f);
+    T.state().schema.length = 0; filings[0].data.schema.forEach((f) => T.state().schema.push(f));
+    await openMergeViaUI(filings);
+    check("對話框提供「重新編號流水號」選項", !!d.getElementById("mergeRenumber"), "");
+    check("預設為不勾選（不改變現行行為）", d.getElementById("mergeRenumber") && !d.getElementById("mergeRenumber").checked, "");
+    check("合併前列出的檔案數 = 2", d.querySelectorAll("#fileRows tr[data-idx]").length === 2,
+      `列數 = ${d.querySelectorAll("#fileRows tr[data-idx]").length}`);
+    check("合併前我方 0 筆、schema = 2 欄", T.getRecords().length === 0 && T.state().schema.length === 2,
+      `我方 ${T.getRecords().length} 筆、schema ${T.state().schema.length} 欄`);
+    d.querySelector("#mergeBody .ddk").checked = true;
+    d.getElementById("mergeApply").click();
+    await sleep(80);
+    let serials = T.getRecords().map((r) => r["序號"]).sort();
+    check("未勾選時保留原編號（會有重複）", serials.join(",") === "1,1,2,2",
+      `筆數 = ${T.getRecords().length}、序號 = ${JSON.stringify(serials)}、首筆 = ${JSON.stringify(T.getRecords()[0] || null).slice(0, 160)}`);
+
+    // (b) 勾選 → 重新編號為 1..N且不重複
+    T.clearStorage();
+    T.setRecords([]);
+    T.state().schema.length = 0; filings[0].data.schema.forEach((f) => T.state().schema.push(f));
+    await openMergeViaUI(filings);
+    d.getElementById("mergeRenumber").checked = true;
+    d.querySelector("#mergeBody .ddk").checked = true;
+    d.getElementById("mergeApply").click();
+    await sleep(80);
+    const rs = T.getRecords();
+    serials = rs.map((r) => r["序號"]);
+    check("勾選後重新編號為 1..N且不重複",
+      rs.length === 4 && serials.slice().sort().join(",") === "1,2,3,4",
+      `筆數 = ${rs.length}、序號 = ${serials.join(",")}`);
+  } catch (e) { check("T12 執行", false, e.message); }
+
+  /* ══════════════════════════════════════════════════════════
+     T13 合併對話框必須警告 schema（欄位）差異
+     ══════════════════════════════════════════════════════════ */
+  section("T13 schema 差異警告");
+  try {
+    T.applyTemplate();                                   // 我方 25 欄
+    T.setRecords([]);
+    const incoming = schemaOf("統編", "序號", "匯入才有欄位");
+    await openMergeViaUI([{ name: "x.json", data: { schema: incoming, records: [rec("x1", "統編", "12345678")] } }]);
+    const box = d.getElementById("schemaDiff");
+    check("對話框有 schema 差異區塊", !!box, "");
+    check("列出匯入檔才有、我方沒有的欄位", !!box && box.textContent.includes("匯入才有欄位"),
+      `我方欄數 = ${T.state().schema.length}、開著的是 = ${JSON.stringify(box ? box.textContent.slice(0, 60) : null)}`);
+    check("同樣提示我方有、匯入檔沒有的欄位", !!box && box.textContent.includes("公司名稱"), box ? JSON.stringify(box.textContent.slice(0, 200)) : "");
+  } catch (e) { check("T13 執行", false, e.message); }
+
+  /* ══════════════════════════════════════════════════════════
+     T14 number 欄位的非數字原值不得被靜默清空
+     ══════════════════════════════════════════════════════════ */
+  section("T14 number 欄位非數字值不遺失");
+  try {
+    T.clearStorage();
+    T.applyTemplate();
+    T.setRecords([rec("n1", "預估營收/月", "5~10件/天", { 公司名稱: "甲公司" })]);
+    T.render();
+    const row = d.querySelector("#tbody tr");
+    row.click();                                        // 點列開啟編輯
+    await until(() => d.getElementById("mbRecord").classList.contains("open"));
+    const inp = d.querySelector('#recForm [data-k="預估營收/月"]');
+    check("非數字原值確實被帶入表單", !!inp && inp.value === "5~10件/天", `value = ${JSON.stringify(inp && inp.value)}`);
+    d.getElementById("recSave").click();
+    await sleep(60);
+    check("儲存後原值未被清空", T.getRecords()[0]["預估營收/月"] === "5~10件/天", JSON.stringify(T.getRecords()[0]["預估營收/月"]));
+  } catch (e) { check("T14 執行", false, e.message); }
+
+  /* ══════════════════════════════════════════════════════════
+     T15 分頁元件必須是 button（可鍵盤操作）
+     ══════════════════════════════════════════════════════════ */
+  section("T15 分頁可鍵盤操作");
+  try {
+    T.clearStorage();
+    T.applyTemplate();
+    T.setRecords(Array.from({ length: 120 }, (_, i) => rec("p" + i, "公司名稱", "C" + i)));
+    T.render();
+    check("分頁使用 <button> 元素", d.querySelectorAll("#pager button.pg").length >= 3,
+      `button.pg = ${d.querySelectorAll("#pager button.pg").length}`);
+    check("分頁不再使用不可聚焦的 <span>", d.querySelectorAll("#pager span.pg").length === 0,
+      `span.pg = ${d.querySelectorAll("#pager span.pg").length}`);
+  } catch (e) { check("T15 執行", false, e.message); }
+
+  /* ══════════════════════════════════════════════════════════
+     T16 表頭全選與個別勾選狀態必須同步
+     ══════════════════════════════════════════════════════════ */
+  section("T16 表頭全選狀態同步");
+  try {
+    T.clearStorage();
+    T.applyTemplate();
+    T.setRecords(Array.from({ length: 3 }, (_, i) => rec("s" + i, "公司名稱", "C" + i)));
+    T.render();
+    const boxes = () => Array.from(d.querySelectorAll("#tbody input[type=checkbox]"));
+    const all = () => d.getElementById("chkAll");
+    check("初始：未勾選任何列 → 表頭未勾選", boxes().every((b) => !b.checked), `checked = ${boxes().map((b) => b.checked).join(",")}`);
+    boxes()[0].click();
+    await sleep(20);
+    check("勾選 1 列 → 表頭為未定狀態（非全選）", all() && all().indeterminate === true && all().checked === false,
+      `checked = ${all() && all().checked}、indeterminate = ${all() && all().indeterminate}`);
+    all().click();                                      // 全選
+    await sleep(20);
+    check("按全選 → 表頭為已勾選", d.getElementById("chkAll") && d.getElementById("chkAll").checked === true, `checked = ${d.getElementById("chkAll") && d.getElementById("chkAll").checked}`);
+    boxes()[1].click();                                 // 取消1 列
+    await sleep(20);
+    check("取消 1 列 → 表頭回到未定狀態", d.getElementById("chkAll") && d.getElementById("chkAll").indeterminate === true && d.getElementById("chkAll").checked === false,
+      `checked = ${d.getElementById("chkAll") && d.getElementById("chkAll").checked}、indeterminate = ${d.getElementById("chkAll") && d.getElementById("chkAll").indeterminate}`);
+  } catch (e) { check("T16 執行", false, e.message); }
+
+  /* ══════════════════════════════════════════════════════════
+     T17 離開頁面前必須把未存的變更補寫（去抖動期間關分頁不得遺失）
+     ══════════════════════════════════════════════════════════ */
+  section("T17 離開頁面前補寫");
+  try {
+    const LS = "datahtml.v1.";
+    function readPersisted() {
+      const gen = w.localStorage.getItem(LS + "gen");
+      if (!gen) return null;
+      const n = parseInt(w.localStorage.getItem(LS + "g" + gen + ".n") || "0", 10);
+      let s = "";
+      for (let i = 0; i < n; i++) s += w.localStorage.getItem(LS + "g" + gen + "." + i) || "";
+      try { return JSON.parse(s); } catch (e2) { return null; }
+    }
+
+    T.clearStorage();
+    T.applyTemplate();
+    T.setRecords([]);
+    d.getElementById("btnNew").click();                 // 新增一筆後儲存 → 排入去抖動存檔
+    await until(() => d.getElementById("mbRecord").classList.contains("open"));
+    d.getElementById("recSave").click();
+    check("存檔前確實尚未寫入（仍在去抖動中）", readPersisted() === null, JSON.stringify(readPersisted() === null));
+    w.dispatchEvent(new w.Event("beforeunload"));       // 關分頁
+    const persisted = readPersisted();
+    check("離開頁面前已補寫入", persisted !== null && persisted.records.length === 1,
+      persisted ? `已寫入 ${persisted.records.length} 筆` : "未寫入");
+  } catch (e) { check("T17 執行", false, e.message); }
+
+  /* ══════════════════════════════════════════════════════════
+     T18 點建立者下拉時，選單應關閉（它不屬於 .menuWrap）
+     ══════════════════════════════════════════════════════════ */
+  section("T18 建立者下拉不屬於選單容器");
+  try {
+    T.clearStorage();
+    T.applyTemplate();
+    T.setRecords([]);
+    T.render();
+    const owner = d.getElementById("ownerFilter");
+    check("建立者下拉存在", !!owner, "");
+    check("建立者下拉不在 .menuWrap 内部", !!owner && owner.closest(".menuWrap") === null,
+      owner && owner.closest(".menuWrap") ? `在 ${owner.closest(".menuWrap").className}` : "不在任何 menuWrap 内");
+    d.getElementById("btnImportMenu").click();          // 開啟匯入選單
+    await sleep(20);
+    check("匯入選單已開啟", d.getElementById("importMenu").classList.contains("open"), "");
+    owner.click();                                    // 點建立者下拉
+    await sleep(20);
+    check("點建立者下拉後選單應關閉", !d.getElementById("importMenu").classList.contains("open"),
+      `open = ${d.getElementById("importMenu").classList.contains("open")}`);
+  } catch (e) { check("T18 執行", false, e.message); }
+
+  /* ── 頁面內不得有未捕捉的例外 ─────────────────────── */
+  section("X1 頁面執行期間的未捕捉例外");
+  check("沒有任何未捕捉的例外", pageErrors.length === 0,
+    pageErrors.length ? `${pageErrors.length} 筆，首筆：${pageErrors[0].split("\n")[0]}` : "");
+  if (pageErrors.length) {
+    console.log("\n未捕捉的例外（事件處理器裡拋錯會被吞掉）：");
+    pageErrors.slice(0, 8).forEach((m) => console.log("   - " + m.split("\n")[0]));
+  }
 
   /* ── 結果輸出 ────────────────────────────────────────────── */
   const pad = (s, n) => s + " ".repeat(Math.max(0, n - [...s].length));
