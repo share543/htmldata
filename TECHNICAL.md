@@ -3,7 +3,7 @@
 本文件說明 `data.html` 的內部設計：資料模型、儲存機制、合併引擎、`report.html` CSV 契約，以及測試方式。
 
 - 檔案本體：`data.html`（單一檔案，CSS/JS 全內嵌，IIFE 包覆）
-- 行數：約 1172 行；主 script 約 900 行
+- 行數：約 1386 行；主 script 約 1092 行（自第 292 行起）
 - 依賴：無（零外部函式庫、零網路）
 
 ---
@@ -17,7 +17,7 @@ data.html
 └── <script>          "use strict" 單一 IIFE
     ├── 常數與狀態       LS_PREFIX / META / SCHEMA / RECORDS / OWNER / TEMPLATE
     ├── 小工具          $ / el / uid / nowISO / strip / norm / fmtVal / dateStrOf
-    ├── 資料層          分塊 localStorage（save/load/clear）
+    ├── 資料層          世代式分塊 localStorage（save/load/clear）
     ├── 紀錄操作        makeRec / addRecords / upsertRecord / delRecords / filtered
     ├── 渲染            renderAll / renderTable / renderPager
     ├── 對話框          openModal / modalYes / toast / showBanner
@@ -83,22 +83,36 @@ function stateObj(){ return { meta:META, schema:SCHEMA, records:RECORDS, owner:O
 
 ## 3. 儲存機制
 
-### 3.1 分塊 localStorage（`saveToStorage` / `loadFromStorage` / `clearChunks`）
+### 3.1 分塊 localStorage：世代指標（`saveToStorage` / `loadFromStorage` / `clearChunks`）
 
-前綴 `LS_PREFIX = "datahtml.v1."`。三種鍵：
+前綴 `LS_PREFIX = "datahtml.v1."`。鍵的配置：
 
 | 鍵 | 用途 |
 |---|---|
-| `datahtml.v1.` | 小資料（單塊，≤ 180000 字元） |
-| `datahtml.v1.n` | 分塊數量 |
-| `datahtml.v1.<i>` | 第 i 塊內容 |
+| `datahtml.v1.gen` | **目前世代的指標（提交點）** |
+| `datahtml.v1.g<gen>.n` | 該世代的分塊數量 |
+| `datahtml.v1.g<gen>.<i>` | 該世代的第 i 塊內容 |
 | `datahtml.v1.owner` | 我的名稱（獨立保存） |
 | `datahtml.v1.theme` | 主題偏好 |
 
-- `saveToStorage()`：序列化 `stateObj()`，先 `clearChunks()` 再依大小寫入。
-- 分塊大小 `CH = 180000` 字元。
-- 寫入失敗（配額）會顯示 danger banner，提示改用「存檔（含資料）」。
-- `loadFromStorage()`：若 `n` 存在則依序取回所有塊後 `join("")`；任一塊缺漏即回傳 `false`。
+`<gen>` 為 `Date.now().toString(36)` + 4 位隨機字元，**每次存檔都是一個新世代**。
+
+**為何用世代指標而不是直接覆寫？** 舊寫法是先 `clearChunks()` 再寫入新資料；一旦中途失敗（例如配額爆掉），舊的完整備份已經被刪掉，且 `n` 已寫入但分塊不全，`loadFromStorage()` 因缺塊回傳 `false` —— 使用者下次開啟會判定為「沒有記憶」，資料等於**無聲消失**。
+
+現在的順序：
+
+```
+1. 把完整內容寫成新世代： g<gen>.n、g<gen>.0 … g<gen>.k
+2. 全部寫入成功後，才把 datahtml.v1.gen 指向新世代   ← 提交點
+3. 清掉前一個世代；順手清掉舊格式殘骸（dropLegacy）
+```
+
+任何在第 2 步之前發生的失敗，指標都還指著舊世代，舊資料完好無損；寫不完整的新世代由 `dropGen()` 清掉，並顯示 danger banner 提示改用「存檔（含資料）」。
+
+- 分塊大小 `CH = 180000` 字元；`n = max(1, ceil(len / CH))`。
+- **已知取捨**：寫入期間新舊世代並存，需要約 **2 倍** localStorage 空間。極端情況（幾乎存滿）會寫不進去，但**不會遺失既有資料**。
+- `loadFromStorage()`：優先讀 `gen` 指向的世代；任一塊缺漏即回傳 `false`。
+- **向下相容**：沒有 `gen` 時改用舊格式（單塊 `datahtml.v1.`，或 `datahtml.v1.n` + `datahtml.v1.<i>`），因此升版後舊資料仍可讀取；升版後第一次存檔會由 `dropLegacy()` 清掉舊格式殘骸。
 - **注意**：`localStorage` 綁定瀏覽器與裝置（`file://` 為同源）。
 
 ### 3.2 自動存檔
@@ -108,6 +122,8 @@ function scheduleSave(){ dirty=true; clearTimeout(saveTimer); saveTimer=setTimeo
 ```
 
 任何異動呼叫 `scheduleSave()`，350 ms 去抖後寫入。
+
+存檔成功時呼叫 `clearErrorBanner()`（只清 danger／warn），**不是** `hideBanner()`。原因：`showBanner()` 也用於「已載入含資料副本」「已從本機記憶還原」這類資訊提示，若存檔一律 `hideBanner()`，那些提示會在約 350 ms 後被關掉，使用者幾乎看不到。
 
 ### 3.3 「存檔（含資料）」副本（`buildSelfCopyHTML()`）
 
@@ -230,12 +246,15 @@ parseImportJSON(text, fileName)
 |---|---|
 | `cloneRecord(r)` | 淺拷貝、剔除 `_raw`、補齊 `_id` / `_createdAt` / `_updatedAt` |
 | `recDiff(a,b)` | 比較兩紀錄是否有任何欄位差異 |
-| `dupDetection(rec, targetById, dedupKeys)` | 在現有 RECORDS 中找判重欄位全部相符、且 `_id` 不同的紀錄；空值不算重複 |
+| `dupMatch(rec, t, dedupKeys)` | 判重欄位是否全部相符；任一側為空值即不算重複 |
+| `dupDetection(rec, targetById, dedupKeys)` | 找疑似重複：有傳 `targetById`（以 `_id` 為鍵的集合）時以該集合比對，否則比對現有 `RECORDS` |
 
 ### 7.3 對話框計數
 
 - `computeFileCounts(incoming)` — 以 `_id` 為鍵，統計每個檔案的 新增 / 更新 / 相同。
 - `refreshDupCells()` — 依勾選的判重欄位，即時重算每個檔案的「疑似重複」數。
+
+> **預覽必須與 `doMerge` 同順序、同基準**：`doMerge` 邊處理邊把「無重複」的匯入紀錄納入基準集合，因此**同批匯入檔之間也會互相判重**（兩個業務各有一筆同統編時，第二筆會被併掉）。預覽若只跟既有 `RECORDS` 比，就會出現「預覽顯示 0、實際併 1 筆」的落差。`refreshDupCells()` 因此也逐步累積 `basis`，並跳過「同 `_id`」（＝更新，不算疑似重複）者。
 
 ### 7.4 `doMerge(filings, ddk, ruleUpd, ruleDup, verbose)`
 
@@ -250,8 +269,8 @@ parseImportJSON(text, fileName)
    - 無 → push（`added`）
    - `ruleDup === "both"` → 新 `_id` push（`added`）
    - `ruleDup === "mine"` → `sameSkipped`
-   - `theirs` 或（`newer` 且匯入較新）→ 以匯入檔內容覆寫 `dup`（**保留我方 `_id` / `_createdAt`**）
-   - 更新 `dup._updatedAt`
+   - `ruleDup === "newer"` 且匯入檔較舊 → `sameSkipped`（保留我方內容＝沒有變更，**不可計為併單**）
+   - 其餘（`theirs`，或 `newer` 且匯入較新）→ 以匯入檔內容覆寫 `dup`（**保留我方 `_id` / `_createdAt`**），`dup._updatedAt` 跟著改成匯入檔的時間（無則 `nowISO()`）、`_owner` 也改為匯入檔的值
 3. 回傳 `{added, updated, sameSkipped, merged, report, summary, verbose}`。
 
 **關鍵設計**：覆寫迴圈一律跳過 `_id` 與 `_createdAt`：
@@ -311,6 +330,8 @@ return s.replace(/\s+/g," ").trim();
 
 `openCsvMapModal()`：逐欄讓使用者對應到本工具欄位（自動以 label/key 猜測），可勾「跳過整列皆空」。匯入為**新增**紀錄。
 
+> 對應清單**只提供 schema 的資料欄位**，不提供系統欄位（`_id` / `_owner` / `_createdAt` / `_updatedAt`）。這些欄位由工具維護；若開放對應，匯入的 CSV 即可覆寫識別碼（造成 `_id` 衝突）或偽造建立者。
+
 ---
 
 ## 10. 測試
@@ -323,9 +344,11 @@ return s.replace(/\s+/g," ").trim();
 
 > 生產環境不設旗標時，此區塊不執行，零成本。
 
-### 10.2 單元／整合測試（headless Chromium）
+### 10.2 單元／整合測試（**尚未納入版控**）
 
-測試產生器 `gen_test.py`（在 `/tmp/opencode`，非版控）：
+> ⚠️ 本節描述的測試產生器 `gen_test.py` 原本放在 `/tmp/opencode`，**不在版控內，且該目錄已不存在**。也就是說 2026-09-26 之後的改動（P0／P1 修正）在本機**沒有任何可重現的回歸網**；把測試納入 repo 仍是待辦事項。
+
+原本的做法：
 
 1. 讀 `data.html`，在主 script 前插入 `<script>window.__DT_TEST__ = true;</script>`。
 2. 在 `</body>` 前插入測試腳本與 `<div id="testresult">`。
@@ -333,7 +356,16 @@ return s.replace(/\s+/g," ").trim();
 
 涵蓋：範本欄位、CSV 引號解析／跳脫、`_owner` 標記、JSON roundtrip、report CSV（表頭／日期／淨化／站所斜線）、2500 筆分塊儲存還原、合併（新增／疑似重複併單並保留 `_id`／同 `_id` 更新／相同略過／`both` 規則）、**存檔含資料副本**（`selfCopy()` 產出的殼層不含 `[data-runtime]` 節點、無重複控制項，且 `#datahtml-data` 內嵌資料可還原）、**欄位型別與範例**（`serial` 自動流水號／`統編` combobox／`日均量體` text／`預估營收` number／`甲指成功轉甲配` 是/否／`結案`・`說明`・`洽談內容` 範例／序號自動配發與補號），以及**真實 UI 點擊測試**（新增紀錄表單完整渲染、儲存、點列編輯）。
 
-目前：**49 / 49 PASS**（純函式 + 11 範本功能 + 8 UI + 5 存檔副本）。
+最後一次可查的紀錄：**49 / 49 PASS**（純函式 + 11 範本功能 + 8 UI + 5 存檔副本）。
+
+#### 2026-09-26 的替代做法：Node + jsdom
+
+本機 Termux 的 `chromium-browser` 無法啟動（`libtermux-exec.so` namespace 錯誤），P0／P1 的驗證改用 **Node + jsdom**：
+
+- jsdom 的 `localStorage` 是 Proxy，**覆寫實例上的 `setItem` 無效**（會被當成寫入一個叫 `setItem` 的項目）；必須覆寫 `Storage.prototype.setItem` 才能模擬配額爆掉。
+- 仍以**真實 UI 流程**驅動：實際點選單、以 `Object.defineProperty` 塞 `files` 後派送 `change`、勾選判重欄位、按下「套用合併」，而非只呼叫測試鉤子。
+- 覆蓋：表頭必填標記、合併預覽與實際結果一致、寫入失敗後舊資料仍在、惡意 schema key 不注入、舊格式相容與無殘骸、反覆存檔不累積舊世代、併單的 `_owner`／`_updatedAt`／計數、提示不被存檔關掉、CSV 不提供系統欄位。
+- 目前 34 項檢查：P0 修正前 6 pass / 6 fail、P1 修正前 31 / 3；修正後 **34 / 0**。
 
 > **重要**：純函式測試（走 `__DT_TEST__` 鉤子）不會觸發 UI 事件處理器，因此 2026-09 曾遺漏一個只在真實表單渲染時才會發生的錯誤（見第 11 節）。凡涉及 DOM 屬性的邏輯，務必以真實點擊補測。
 
@@ -367,10 +399,21 @@ return s.replace(/\s+/g," ").trim();
 - `EMBEDDED_DATA` 必須延遲到 `init()` 讀取。
 - 合併覆寫務必跳過 `_id` / `_createdAt`，否則會造成連鎖的「更新變新增」錯誤。
 
+#### 2026-09-26（P0／P1 修正）新增
+
+- **`textContent` 不會解析 HTML**：表頭原本寫 `th.textContent = label + "<span…>*</span>"`，畫面會直接顯示標籤原始碼。要放元素就用 `createElement` + `appendChild`。
+- **用 innerHTML 拼接「來自匯入檔」的字串時，過濾清單必須涵蓋引號**：判重欄位 chips 以 `value='…'`（單引號）拼接卻只過濾 `< > & "`，key 內含單引號即可跳出屬性變成注入。這些 key 來自他人匯出的 JSON，而 `feSave` 只擋 `= ; ,`。改用 DOM API 建立。
+- **合併預覽必須模擬 `doMerge` 的累積順序**，否則預覽數字會低於實際結果（見 7.3）。
+- **存檔失敗不可先刪舊資料**：先寫成新世代、全部成功才切換指標（見 3.1）。
+- **存檔成功不要呼叫 `hideBanner()`**：會把資訊提示一起關掉（見 3.2）。
+- **`ruleDup = "newer"` 且匯入較舊時要算「略過」**，不能計為併單（見 7.4）。
+- **不要憑讀碼下結論**：2026-09-26 的 review 曾誤判「疑似重複分支未更新 `_owner`／`_updatedAt`」，實際覆寫迴圈本來就會帶到這兩個欄位（只排除 `_raw`／`_id`／`_createdAt`）。寫測試驗證比讀碼可靠。
+
 ---
 
 ## 12. 版本與鍵名
 
 - 儲存前綴 `datahtml.v1.`（結構若不相容需升版至 `v2`）。
+- 鍵名：`datahtml.v1.gen`（世代指標）、`datahtml.v1.g<gen>.n` 與 `.g<gen>.<i>`（世代分塊）、`datahtml.v1.owner`、`datahtml.v1.theme`。舊格式（`datahtml.v1.`／`.n`／`.<i>`）僅保留讀取能力（見 3.1）。
 - JSON `meta.ver = 1`。
 - `report.html` 契約以 `REPORT_HEADERS`（25 欄精確名稱）為準，若 `report.html` 表頭變更需同步更新 `TEMPLATE` 與 `REPORT_HEADERS`。
