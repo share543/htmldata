@@ -344,32 +344,33 @@ return s.replace(/\s+/g," ").trim();
 
 > 生產環境不設旗標時，此區塊不執行，零成本。
 
-### 10.2 單元／整合測試（**尚未納入版控**）
+### 10.2 單元／整合測試（`npm test`）
 
-> ⚠️ 本節描述的測試產生器 `gen_test.py` 原本放在 `/tmp/opencode`，**不在版控內，且該目錄已不存在**。也就是說 2026-09-26 之後的改動（P0／P1 修正）在本機**沒有任何可重現的回歸網**；把測試納入 repo 仍是待辦事項。
+測試檔在 `tests/data-html.test.js`：
 
-原本的做法：
+```sh
+npm install   # 第一次需要（jsdom）；node_modules/ 已 gitignore
+npm test
+```
 
-1. 讀 `data.html`，在主 script 前插入 `<script>window.__DT_TEST__ = true;</script>`。
-2. 在 `</body>` 前插入測試腳本與 `<div id="testresult">`。
-3. 以 headless Chromium `--dump-dom` 執行，解析 `<div class="t">` 結果。
+流程：把 `data.html` 讀進來，在主 script 前注入 `<script>window.__DT_TEST__ = true;</script>`，再以 jsdom 載入。但**不依賴測試鉤子跑完全部** —— 涉及 DOM 與事件處理器的行為一律以**真實 UI 流程**驅動：實際點 `#importMenu` 的按鈕、以 `Object.defineProperty` 塞 `input.files` 後派送 `change`、勾選判重欄位、按下 `#mergeApply`。
 
-涵蓋：範本欄位、CSV 引號解析／跳脫、`_owner` 標記、JSON roundtrip、report CSV（表頭／日期／淨化／站所斜線）、2500 筆分塊儲存還原、合併（新增／疑似重複併單並保留 `_id`／同 `_id` 更新／相同略過／`both` 規則）、**存檔含資料副本**（`selfCopy()` 產出的殼層不含 `[data-runtime]` 節點、無重複控制項，且 `#datahtml-data` 內嵌資料可還原）、**欄位型別與範例**（`serial` 自動流水號／`統編` combobox／`日均量體` text／`預估營收` number／`甲指成功轉甲配` 是/否／`結案`・`說明`・`洽談內容` 範例／序號自動配發與補號），以及**真實 UI 點擊測試**（新增紀錄表單完整渲染、儲存、點列編輯）。
+涵蓋（T1–T10）：表頭必填標記、合併預覽與實際結果一致、寫入失敗不得毀掉舊資料、惡意 schema key 不注入、儲存格式相容與不殘留、基本功能（建立者／流水號／report CSV／淨化／CSV 解析）、疑似重複併單的欄位與計數、提示不被自動存檔關掉、CSV 對應不提供系統欄位、含資料副本可離線還原且不重複插入執行期控制項。
 
-最後一次可查的紀錄：**49 / 49 PASS**（純函式 + 11 範本功能 + 8 UI + 5 存檔副本）。
+**現況：43 / 43 PASS。**
 
-#### 2026-09-26 的替代做法：Node + jsdom
+#### 環境限制與注意
 
-本機 Termux 的 `chromium-browser` 無法啟動（`libtermux-exec.so` namespace 錯誤），P0／P1 的驗證改用 **Node + jsdom**：
-
-- jsdom 的 `localStorage` 是 Proxy，**覆寫實例上的 `setItem` 無效**（會被當成寫入一個叫 `setItem` 的項目）；必須覆寫 `Storage.prototype.setItem` 才能模擬配額爆掉。
-- 仍以**真實 UI 流程**驅動：實際點選單、以 `Object.defineProperty` 塞 `files` 後派送 `change`、勾選判重欄位、按下「套用合併」，而非只呼叫測試鉤子。
-- 覆蓋：表頭必填標記、合併預覽與實際結果一致、寫入失敗後舊資料仍在、惡意 schema key 不注入、舊格式相容與無殘骸、反覆存檔不累積舊世代、併單的 `_owner`／`_updatedAt`／計數、提示不被存檔關掉、CSV 不提供系統欄位。
-- 目前 34 項檢查：P0 修正前 6 pass / 6 fail、P1 修正前 31 / 3；修正後 **34 / 0**。
+- **`chromium-browser` 在 Termux 無法啟動**（`libtermux-exec.so` 的 namespace 錯誤），因此不使用它。2026-09 之前是 headless Chromium + `/tmp/opencode/gen_test.py`；該目錄已不存在，測試已改為本檔並納入版控。
+- **jsdom 的 `localStorage` 是 Proxy**：覆寫實例上的 `setItem` 無效（會被當成寫入一個叫 `setItem` 的項目），模擬配額爆掉必須覆寫 `Storage.prototype.setItem`。
+- **此掛載不支援 symlink**：npm 建立 `node_modules/.bin` 會 `EACCES`，因此 `.npmrc` 設 `bin-links=false`。測試不需要任何相依套件的 CLI。
+- jsdom 沒有版面引擎，CSS／列印相關行為不在測試範圍。
 
 > **重要**：純函式測試（走 `__DT_TEST__` 鉤子）不會觸發 UI 事件處理器，因此 2026-09 曾遺漏一個只在真實表單渲染時才會發生的錯誤（見第 11 節）。凡涉及 DOM 屬性的邏輯，務必以真實點擊補測。
 
 ### 10.3 report.html 端到端驗證（Node）
+
+> ⚠️ 此驗證腳本**不在版控內**（原本在 `/tmp/opencode`，已不存在），目前這 11 項無法重現。
 
 因 `report.html` 內嵌約 200 KB 單一 script，headless `--dump-dom` 對其執行時序不穩，故改以 Node + DOM stub 執行 `report.html` 的主 script，取用其**真實函式**驗證契約：
 

@@ -199,14 +199,35 @@
 
 | 檔案 | 說明 |
 |---|---|
-| `data.html` | 工具本體（單檔、離線） |
-| `customer.xlsx` | 欄位範本來源（`2026總表`，25 欄；含真實客戶資料，請勿外流） |
+| `data.html` | 工具本體（單檔、離線、**零依賴**） |
 | `README.md` | 使用說明（本文件） |
 | `TECHNICAL.md` | 技術文件（資料模型、儲存、合併引擎、測試） |
 | `AGENTS.md` | 給協作者／AI 的專案備註與限制 |
+| `tests/data-html.test.js` | 回歸測試（**開發用**，需 `npm install`，見下節） |
+| `package.json` / `.npmrc` | 測試用工具設定（工具本體不需要） |
+| `customer.xlsx` | 欄位範本來源（`2026總表`，25 欄；**含真實客戶資料，刻意不納入版控**，見 `.gitignore`） |
+
+---
+
+## 開發（改動 `data.html` 時）
+
+工具本體 `data.html` 是**零依賴單一檔案**，直接用瀏覽器開就能跑、也能直接編輯。
+但改動後請跑回歸測試：
+
+```sh
+npm install   # 只有第一次需要（安裝 jsdom；node_modules/ 已列入 .gitignore）
+npm test
+```
+
+測試以 Node + jsdom 載入 `data.html`，並用**真實 UI 流程**驅動（實際點選單、派送選檔事件、按下套用合併），共 40 餘項檢查，涵蓋儲存格式相容、合併規則與計數、`report.html` CSV 契約、含資料副本等。
+
+> 為什麼不是 headless Chromium：Termux 環境下 `chromium-browser` 會因 `libtermux-exec.so` 的 namespace 問題無法啟動。
+>
+> 為什麼 `.npmrc` 要設 `bin-links=false`：Android 共享儲存（`/storage/emulated/0`）的 FUSE 不支援 symlink，npm 建立 `node_modules/.bin` 時會 `EACCES`。測試不需要任何相依套件的 CLI。
 
 ---
 
 ## 授權 / 備註
 
-本工具為內部作業用途。內含真實客戶資料的檔案請勿任意散布。
+本工具為內部作業用途，**保留所有權利**（All rights reserved，詳見 [`LICENSE`](LICENSE)）。
+內含真實客戶資料的檔案（`customer.xlsx` 與任何資料匯出）請勿任意散布。

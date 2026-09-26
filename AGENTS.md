@@ -7,9 +7,10 @@ Tools for the CRM customer data, plus their docs.
 - `data.html` — single-file, offline, cross-platform **data entry / merge tool**. Vanilla HTML+CSS+JS, all inline, **no build step, no dependencies**. Business staff fill it in; HQ merges their JSON exports and exports a CSV for `report.html`.
 - `README.md` — user guide.
 - `TECHNICAL.md` — technical spec (data model, storage, merge engine, report CSV contract, tests).
-- `customer.xlsx` — source of the 25-column template (see below).
+- `customer.xlsx` — source of the 25-column template (see below). **Not committed** — it is gitignored because it holds real customer data.
+- `tests/data-html.test.js` + `package.json` / `.npmrc` — dev-only regression tests. The tool itself stays zero-dependency.
 
-There is no committed build/lint/test runner. Behaviour is tested ad hoc with headless Chromium.
+Tests: `npm install` (once) then `npm test` — Node + jsdom, no browser needed. See "Working on data.html" below.
 
 ## The data
 
@@ -25,8 +26,10 @@ There is no committed build/lint/test runner. Behaviour is tested ad hoc with he
 
 - Single file, no deps. Keep CSS/JS inline. Edit directly.
 - Verify JS syntax by extracting the main `<script>` and running `node --check`.
-- Tests (not committed) live in `/tmp/opencode`: `gen_test.py` emits a harness that injects `window.__DT_TEST__ = true` before the main script and drives the exposed hook API; real UI flows are exercised by clicking the actual buttons. Run with headless Chromium `--dump-dom`.
-- The report consumer is `/mnt/sdcard/Documents/opencode/crm/report.html` (reads `.xlsx`/`.csv`, exact header names, naive comma split).
+- Tests: `tests/data-html.test.js` (`npm test`). It injects `window.__DT_TEST__ = true` before the main script and drives **real UI flows** (clicking menus, dispatching file `change` events, pressing 套用合併) rather than only the hook API. jsdom has no layout engine, so CSS behaviour is not covered. Note `chromium-browser` does **not** run in Termux (libtermux-exec.so namespace error), which is why jsdom is used.
+- jsdom gotcha: its `localStorage` is a Proxy — assigning to the *instance* is silently treated as writing an entry, so simulating a quota failure requires overriding `Storage.prototype.setItem`.
+- This mount does not support symlinks, so `npm install` needs `bin-links=false`; that is set in `.npmrc`. `node_modules/` is gitignored.
+- The report consumer is `../crm/report.html` (reads `.xlsx`/`.csv`, exact header names, naive comma split). Older notes give the absolute path `/mnt/sdcard/Documents/opencode/crm/report.html` — inside Termux use `~/storage/documents/opencode/crm/report.html` (`/mnt/sdcard` exists but is not readable from Termux).
 
 ### Invariants / past bugs (guard these)
 
@@ -36,9 +39,18 @@ There is no committed build/lint/test runner. Behaviour is tested ad hoc with he
 - `doMerge` must not overwrite `_id` / `_createdAt`.
 - report.html CSV: its parser is naive comma-split → `sanitizeReport` must replace `,` `"` and newlines.
 - `serial` field auto-increments on create; `backfillSerial()` fills missing ones on load/template-apply.
+- Table header: never put HTML into `textContent` — the 必填 `*` must be a real `<span>` element.
+- Merge-dialog 判重 chips are built with **DOM APIs**, never `innerHTML` concatenation: keys come from other people's exported JSON and may contain quotes.
+- Merge preview (`refreshDupCells`) must accumulate the same basis in the same order as `doMerge`, otherwise the preview count is lower than the actual merge result.
+- `saveToStorage()` must never delete the current copy before the new one is fully written (generation pointer = commit point). See TECHNICAL.md 3.1.
+- Save success calls `clearErrorBanner()`, never `hideBanner()` — info banners must survive autosave.
+- `ruleDup === "newer"` with an older incoming record is a **skip**, not a merge.
+- Never conclude from reading code alone: the 2026-09-26 review wrongly claimed the dup branch did not update `_owner`/`_updatedAt`. Write a test.
 
 ## Gotchas
 
 - **Real customer PII** (names, phones, emails, addresses, 統編) is in `customer.xlsx` and in any data exports. Do not echo it into logs or published output beyond what the task requires.
-- Git on this mount needs:
-  `git config --global --add safe.directory /mnt/sdcard/Documents/opencode/htmldata`
+- Git on this mount needs a safe.directory entry (or pass `-c safe.directory=…` per command):
+  `git config --global --add safe.directory /storage/emulated/0/Documents/opencode/htmldata`
+- `git` has `credential.helper=store` configured but no `~/.git-credentials`, so pushes fail with "could not read Username". Either run `gh auth setup-git` once, or push with
+  `git -c credential.helper= -c credential.helper='!gh auth git-credential' push`.
