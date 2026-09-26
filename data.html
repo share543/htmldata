@@ -393,22 +393,21 @@ function dateStrOf(v){ if(!v) return ""; var t=String(v).trim(); if(/^\d{4}-\d{2
 
 /* ============================= 資料層（分塊 localStorage） ============================= */
 function stateObj(){ return { meta:META, schema:SCHEMA, records:RECORDS, owner:OWNER }; }
-function saveToStorage(){
+/* 分塊儲存採「世代指標」：新資料先寫成新的世代（datahtml.v1.g<gen>.*），
+   全部寫入成功後才切換指標（datahtml.v1.gen）。任何一步失敗都不會破壞目前可用的舊資料 ——
+   舊寫法是先 clearChunks() 再寫入，一旦中途失敗（例如配額爆掉）連舊的完整備份都會一起消失，
+   下次開啟會因缺塊而判定為「沒有記憶」。代價：寫入時需要約 2 倍空間。 */
+function genCountKey(gen){ return LS_PREFIX+"g"+gen+".n"; }
+function genChunkKey(gen, i){ return LS_PREFIX+"g"+gen+"."+i; }
+function dropGen(gen){
   try{
-    var s = JSON.stringify(stateObj());
-    clearChunks();
-    var CH = 180000;
-    if(s.length <= CH){ localStorage.setItem(LS_PREFIX, s); }
-    else{
-      var n = Math.ceil(s.length/CH);
-      localStorage.setItem(LS_PREFIX+"n", String(n));
-      for(var i=0;i<n;i++){ localStorage.setItem(LS_PREFIX+i, s.slice(i*CH,(i+1)*CH)); }
-    }
-    dirty=false;
-    hideBanner();
-  }catch(e){ showBanner("localStorage 寫入失敗／已滿（"+(e&&e.name||"error")+"）。建議用「存檔（含資料）」下載副本保存。","danger"); }
+    var n=parseInt(localStorage.getItem(genCountKey(gen))||"0",10);
+    for(var i=0;i<n;i++) localStorage.removeItem(genChunkKey(gen,i));
+    localStorage.removeItem(genCountKey(gen));
+  }catch(e){}
 }
-function clearChunks(){
+function dropLegacy(){
+  /* 清除舊格式（無世代指標）的殘骸；升版後第一次存檔就會清掉 */
   try{
     var n=localStorage.getItem(LS_PREFIX+"n");
     for(var i=0;i<(n?parseInt(n,10):0);i++) localStorage.removeItem(LS_PREFIX+i);
@@ -416,11 +415,48 @@ function clearChunks(){
     localStorage.removeItem(LS_PREFIX+"n");
   }catch(e){}
 }
+function saveToStorage(){
+  var gen=null;
+  try{
+    var s = JSON.stringify(stateObj());
+    var CH = 180000;
+    var n = Math.max(1, Math.ceil(s.length/CH));
+    gen = Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    localStorage.setItem(genCountKey(gen), String(n));
+    for(var i=0;i<n;i++){ localStorage.setItem(genChunkKey(gen,i), s.slice(i*CH,(i+1)*CH)); }
+    var prev = localStorage.getItem(LS_PREFIX+"gen");
+    localStorage.setItem(LS_PREFIX+"gen", gen);        /* ← 指標切換＝提交點 */
+    if(prev && prev!==gen) dropGen(prev);
+    dropLegacy();
+    dirty=false;
+    hideBanner();
+  }catch(e){
+    if(gen) dropGen(gen);                              /* 清掉寫不完整的新世代，指標仍指向舊的可用資料 */
+    showBanner("localStorage 寫入失敗／已滿（"+(e&&e.name||"error")+"）。本次未動到先前的記憶，建議用「存檔（含資料）」下載副本保存。","danger");
+  }
+}
+function clearChunks(){
+  try{
+    var gen=localStorage.getItem(LS_PREFIX+"gen");
+    if(gen){ dropGen(gen); localStorage.removeItem(LS_PREFIX+"gen"); }
+    dropLegacy();
+  }catch(e){}
+}
 function loadFromStorage(){
-  var n = localStorage.getItem(LS_PREFIX+"n");
+  var gen=localStorage.getItem(LS_PREFIX+"gen");
   var s;
-  if(n){ n=parseInt(n,10); var parts=[]; for(var i=0;i<n;i++){ var p=localStorage.getItem(LS_PREFIX+i); if(p===null) return false; parts.push(p); } s=parts.join(""); }
-  else{ s = localStorage.getItem(LS_PREFIX); }
+  if(gen){
+    var gn=parseInt(localStorage.getItem(genCountKey(gen))||"0",10);
+    if(!gn) return false;
+    var gparts=[];
+    for(var g=0;g<gn;g++){ var gp=localStorage.getItem(genChunkKey(gen,g)); if(gp===null) return false; gparts.push(gp); }
+    s=gparts.join("");
+  } else {
+    /* 相容舊格式（升版前存入的資料） */
+    var n = localStorage.getItem(LS_PREFIX+"n");
+    if(n){ n=parseInt(n,10); var parts=[]; for(var i=0;i<n;i++){ var p=localStorage.getItem(LS_PREFIX+i); if(p===null) return false; parts.push(p); } s=parts.join(""); }
+    else{ s = localStorage.getItem(LS_PREFIX); }
+  }
   if(!s) return false;
   try{
     var obj = JSON.parse(s);
@@ -494,8 +530,9 @@ function renderTable(){
   th0.appendChild(all); tr.appendChild(th0);
   for(var i=0;i<SCHEMA.length;i++){
     var th=document.createElement("th"); th.id="hdr-"+SCHEMA[i].key;
-    th.textContent=SCHEMA[i].label+(SCHEMA[i].required?" <span style='color:var(--danger)'>*</span>":"");
-    if(SCHEMA[i].options && SCHEMA[i].options.length) th.textContent+= " ("+SCHEMA[i].options.length+"選項)";
+    th.appendChild(document.createTextNode(SCHEMA[i].label));
+    if(SCHEMA[i].required){ var reqMark=document.createElement("span"); reqMark.style.color="var(--danger)"; reqMark.textContent=" *"; th.appendChild(reqMark); }
+    if(SCHEMA[i].options && SCHEMA[i].options.length) th.appendChild(document.createTextNode(" ("+SCHEMA[i].options.length+"選項)"));
     tr.appendChild(th);
   }
   var thS=document.createElement("th"); thS.textContent="建立"; tr.appendChild(thS);
@@ -925,10 +962,9 @@ async function startMerge(){
 function openMergeDialog(filings){
   var body=$("mergeBody"); body.innerHTML="";
   var keys=[]; filings.forEach(function(ff){ ff.data.schema.forEach(function(f){ if(keys.indexOf(f.key)<0) keys.push(f.key); }); });
-  var chips=keys.map(function(k){ return "<label style='white-space:nowrap'><input type='checkbox' value='"+String(k).replace(/[<>&"]/g,"")+"' class='ddk'>"+String(k).replace(/[<>&"]/g,"")+"</label>"; }).join(" ");
   var html="";
   html+="<div class='chkrow'><b>疑似重複偵測（同一客戶可能被不同業務各自建檔）</b></div>";
-  html+="<div class='chkrow'>以欄位判重，勾選後「疑似重複」計數會即時更新（可複選，例：統編／公司名稱）："+chips+"</div>";
+  html+="<div class='chkrow'>以欄位判重，勾選後「疑似重複」計數會即時更新（可複選，例：統編／公司名稱）：<span id='dkChips'></span></div>";
   html+="<div class='chkrow'><label><input type='checkbox' id='mergeVerbose'> 合併完成後顯示詳細報表</label></div>";
   html+="<div class='mergeSummary'><table><thead><tr><th>檔案</th><th>新增</th><th>更新(同識別碼)</th><th>相同(略過)</th><th class='dup'>疑似重複</th></tr></thead><tbody id='fileRows'>";
   var totalAdd=0,totalUpd=0,totalSame=0;
@@ -944,6 +980,15 @@ function openMergeDialog(filings){
   html+="<div class='chkrow'><select id='ruleDup' class='fw'><option value='newer'>併成一筆，保留較新內容與我方識別碼</option><option value='theirs'>併成一筆，以匯入檔覆寫內容</option><option value='mine'>併成一筆，保留我方內容</option><option value='both'>保留兩筆（不併）</option></select></div>";
   html+="<div class='sys'>識別碼全程保留：同一業務再次匯出時會被判定為「更新」而非新增，避免重複建檔。不同業務對同一客戶各建一支紀錄時，可用判重欄位偵測並合併。</div>";
   body.innerHTML=html;
+  // 判重欄位清單以 DOM API 建立：這些 key 來自匯入檔（他人檔案），
+  // 不可用 innerHTML 拼接 —— 屬性以單引號包時，key 內的單引號會跳出屬性造成注入。
+  var chipBox=body.querySelector("#dkChips");
+  keys.forEach(function(k){
+    var lab=document.createElement("label"); lab.style.whiteSpace="nowrap";
+    var cb=document.createElement("input"); cb.type="checkbox"; cb.className="ddk"; cb.value=String(k);
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(String(k)));
+    chipBox.appendChild(lab); chipBox.appendChild(document.createTextNode(" "));
+  });
   Array.prototype.forEach.call(body.querySelectorAll(".ddk"), function(ch){ ch.onchange=refreshDupCells; });
   refreshDupCells();
   pendingMerge={ filings:filings };
@@ -956,16 +1001,19 @@ function refreshDupCells(){
   if(!pendingMerge) return;
   var ddk=selectedDedupKeys();
   var tot=0;
+  // 依 doMerge 相同的處理順序累積比對基準：先處理過的匯入紀錄也會成為後續紀錄的比對對象。
+  // 否則預覽數字會低於實際結果（例：兩個業務各有一筆同統編時，預覽顯示 0 但實際會併掉 1 筆）。
+  var basis={}; RECORDS.forEach(function(r){ basis[r._id]=r; });
   pendingMerge.filings.forEach(function(ff,fi){
-    var cell=document.querySelector("#fileRows tr[data-idx='"+fi+"'] .dupCell");
-    if(!cell) return;
     var n=0;
     ff.data.records.forEach(function(orig){
       var rec=cloneRecord(orig);
-      var t=dupDetection(rec, null, ddk);
-      if(t && t._id!==rec._id) n++;
+      if(basis[rec._id]) return;                     // 同識別碼＝更新，不計入疑似重複
+      if(dupDetection(rec, basis, ddk)) n++;
+      else basis[rec._id]=rec;                       // 模擬 doMerge：無重複者會進入基準集合
     });
-    cell.innerHTML = n? ("<b class='dup'>"+n+"</b>") : "0";
+    var cell=document.querySelector("#fileRows tr[data-idx='"+fi+"'] .dupCell");
+    if(cell) cell.innerHTML = n? ("<b class='dup'>"+n+"</b>") : "0";
     tot+=n;
   });
   var tc=$("dupTotal"); if(tc) tc.innerHTML= tot? ("<b class='dup'>"+tot+"</b>") : "<b>0</b>";
@@ -982,14 +1030,21 @@ function computeFileCounts(incoming){
   }
   return { add:add, upd:upd, same:same, dup:0 };
 }
+function dupMatch(rec, t, dedupKeys){
+  for(var j=0;j<dedupKeys.length;j++){ var k=dedupKeys[j]; var a=norm(rec[k]), b=norm(t[k]); if(a===""||b===""||a!==b) return false; }
+  return true;
+}
 function dupDetection(rec, targetById, dedupKeys){
   if(!dedupKeys.length) return null;
+  if(targetById){
+    /* 以呼叫端提供的基準集合比對（doMerge 與合併預覽都會逐步累積新紀錄進去） */
+    for(var id in targetById){ var m=targetById[id]; if(m && m._id!==rec._id && dupMatch(rec,m,dedupKeys)) return m; }
+    return null;
+  }
   for(var i=0;i<RECORDS.length;i++){
     var t=RECORDS[i];
     if(t._id===rec._id) continue;
-    var all=true;
-    for(var j=0;j<dedupKeys.length;j++){ var k=dedupKeys[j]; var a=norm(rec[k]), b=norm(t[k]); if(a===""||b===""||a!==b){ all=false; break; } }
-    if(all) return t;
+    if(dupMatch(rec,t,dedupKeys)) return t;
   }
   return null;
 }
