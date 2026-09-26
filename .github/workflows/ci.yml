@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    name: 單元／整合（Node + jsdom）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: 執行 jsdom 回歸測試
+        run: npm test
+
+  e2e:
+    name: 端到端（Playwright + 真實 Chromium）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      # 不透過 node_modules/.bin：本專案的 .npmrc 設了 bin-links=false
+      # （Android 共享儲存的 FUSE 不支援 symlink，npm 會 EACCES），
+      # 在 CI 一樣不會產生 .bin，直接呼叫 CLI 最沒有懸念。
+      - name: 安裝 Chromium
+        run: node node_modules/@playwright/test/cli.js install --with-deps chromium
+
+      - name: 執行端到端測試
+        run: node node_modules/@playwright/test/cli.js test
+
+      - name: 失敗時保留報告
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

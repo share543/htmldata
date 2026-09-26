@@ -1,3 +1,5 @@
 customer.xlsx
 .DS_Store
 node_modules/
+playwright-report/
+test-results/
