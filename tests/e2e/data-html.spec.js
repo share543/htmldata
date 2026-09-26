@@ -219,10 +219,26 @@ test("匯入檔的惡意 schema key 在真實引擎中也不注入", async ({ pa
   await page.click("#btnTemplate");
 
   const evil = "A' onmouseover='window.__PWNED=1' x='";
-  const p = filingFile("evil.json", [
-    { _id: "e1", _owner: "業務", _createdAt: "2026-01-01 00:00", _updatedAt: "2026-01-01 00:00", [evil]: "v" },
-  ]);
-  await chooseFiles(page, "merge", [p]);
+  // 惡意 key 必須放在 **schema** 裡 —— 判重欄位 chips 是從各檔案的 schema 收集的。
+  // （第一版把惡意 key 只放進 record，chips 裡就是正常的「統編」，根本沒測到東西。
+  //  jsdom 版的 T4 用的是 schema，所以沒這問題；CI 上的真實引擎把它抓出來了。）
+  const evilPath = path.join(tmpDir, "evil.json");
+  fs.writeFileSync(
+    evilPath,
+    JSON.stringify(
+      {
+        meta: { tool: "data.html", ver: 1 },
+        schema: [{ key: evil, label: evil, type: "text", options: [], examples: [], hint: "", default: "", required: false }],
+        records: [
+          { _id: "e1", _owner: "業務", _createdAt: "2026-01-01 00:00", _updatedAt: "2026-01-01 00:00", [evil]: "v" },
+        ],
+      },
+      null,
+      1
+    ),
+    "utf8"
+  );
+  await chooseFiles(page, "merge", [evilPath]);
   await expect(page.locator("#mbMerge")).toHaveClass(/open/);
 
   expect(await page.locator("#mergeBody [onmouseover]").count()).toBe(0);
