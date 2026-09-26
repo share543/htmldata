@@ -10,7 +10,7 @@ Tools for the CRM customer data, plus their docs.
 - `customer.xlsx` — source of the 25-column template (see below). **Not committed** — it is gitignored because it holds real customer data.
 - `tests/data-html.test.js` + `package.json` / `.npmrc` — dev-only regression tests. The tool itself stays zero-dependency.
 
-Tests: `npm install` (once) then `npm test` — Node + jsdom, no browser needed. See "Working on data.html" below.
+Tests: `npm install` (once) then `npm test` — Node + jsdom, no browser needed (77 checks, see `tests/data-html.test.js`). See "Working on data.html" below.
 
 ## The data
 
@@ -45,6 +45,12 @@ Tests: `npm install` (once) then `npm test` — Node + jsdom, no browser needed.
 - `saveToStorage()` must never delete the current copy before the new one is fully written (generation pointer = commit point). See TECHNICAL.md 3.1.
 - Save success calls `clearErrorBanner()`, never `hideBanner()` — info banners must survive autosave.
 - `ruleDup === "newer"` with an older incoming record is a **skip**, not a merge.
+- `number` fields with a non-numeric stored value must fall back to `type=text`, otherwise the value is silently wiped on save.
+- The owner-filter `<select>` must be inserted **outside** `.menuWrap`, or the click-outside handler will think it is still inside a menu and never close the import/export dropdowns.
+- Pager controls are `<button>` (keyboard reachable), not `<span>`. Individual row selection must call `syncHeaderCheckbox()`.
+- `beforeunload` / `pagehide` must flush the pending debounced save.
+- Merge dialog: `#schemaDiff` warns about field-structure differences (written with `textContent`); `#mergeRenumber` is opt-in and must stay off by default.
+- Test harness: `openMergeViaUI` / `openCsvViaUI` must first close any open modal and then wait for the **content** to match the batch (file count + names). Waiting only for `open` reads a leftover dialog from a previous test and yields confidently wrong results. Tests that merely inspect a dialog (T4, T9) must close it themselves.
 - Never conclude from reading code alone: the 2026-09-26 review wrongly claimed the dup branch did not update `_owner`/`_updatedAt`. Write a test.
 
 ## Gotchas

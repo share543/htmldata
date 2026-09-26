@@ -123,6 +123,8 @@ function scheduleSave(){ dirty=true; clearTimeout(saveTimer); saveTimer=setTimeo
 
 任何異動呼叫 `scheduleSave()`，350 ms 去抖後寫入。
 
+**離開頁面前會補寫**：去抖動期間若關閉／切換分頁，這 350 ms 內的最後一筆異動會遺失，因此 `beforeunload`（桌面）與 `pagehide`（行動瀏覽器較可靠）都呼叫 `flushPendingSave()`；它只在 `dirty` 時取消計時器並直接 `saveToStorage()`。
+
 存檔成功時呼叫 `clearErrorBanner()`（只清 danger／warn），**不是** `hideBanner()`。原因：`showBanner()` 也用於「已載入含資料副本」「已從本機記憶還原」這類資訊提示，若存檔一律 `hideBanner()`，那些提示會在約 350 ms 後被關掉，使用者幾乎看不到。
 
 ### 3.3 「存檔（含資料）」副本（`buildSelfCopyHTML()`）
@@ -160,7 +162,7 @@ function scheduleSave(){ dirty=true; clearTimeout(saveTimer); saveTimer=setTimeo
 | `text` | `<input type=text>` |
 | `combobox` | `<input list=datalist>`（範例 + 收集既有值） |
 | `select` | `<select>`（固定 options） |
-| `number` | `<input type=number>` |
+| `number` | `<input type=number>`；**若既有值不是數字**（例：CSV 匯入的 `5~10件/天`）則改用 `type=text`，以免該值被靜默清空 |
 | `date` | `<input type=date>`，儲存為 `YYYY-MM-DD` |
 | `textarea` | `<textarea>`（附範例 Chip 與提示） |
 | `serial` | 唯讀文字框；新增時自動填入流水號 |
@@ -207,6 +209,9 @@ function scheduleSave(){ dirty=true; clearTimeout(saveTimer); saveTimer=setTimeo
 - 刪除：勾選後 `delRecords(ids)`。
 - 渲染：`renderTable` 依 `PAGE_SIZE`（50/100/200/500 可切）分頁；`renderPager` 產生分頁列。
 - 搜尋：`filtered()` 對所有 schema 欄位與 `_owner` 做不分大小寫子字串比對。
+- 分頁按鈕用 `<button>`（不是 `<span>`），才能以鍵盤操作；超出範圍者設 `disabled`。
+- 表頭全選（`#chkAll`）與個別列勾選由 `syncHeaderCheckbox()` 同步：全部勾選→`checked`，部分勾選→`indeterminate`。
+- 執行期才建立的工具列控制項（搜尋框、建立者下拉）都帶 `data-runtime="1"`，供「存檔（含資料）」副本剷除。**建立者下拉需插在 `.menuWrap` 之外**：否則會落在`.menuWrap{position:relative}` 內，使 document 的「點外面關選單」判斷誤以為還在選單裡，選單不會關。
 
 ---
 
@@ -253,6 +258,7 @@ parseImportJSON(text, fileName)
 
 - `computeFileCounts(incoming)` — 以 `_id` 為鍵，統計每個檔案的 新增 / 更新 / 相同。
 - `refreshDupCells()` — 依勾選的判重欄位，即時重算每個檔案的「疑似重複」數。
+- `openMergeDialog()` 另比對我方 `SCHEMA` 與匯入檔 schema，把差異寫入 `#schemaDiff`（匯入檔有、我方沒有的欄位會影響畫面顯示與 `report.html` 匯出）。內容用 `textContent` 寫入 —— key 來自他人檔案。
 
 > **預覽必須與 `doMerge` 同順序、同基準**：`doMerge` 邊處理邊把「無重複」的匯入紀錄納入基準集合，因此**同批匯入檔之間也會互相判重**（兩個業務各有一筆同統編時，第二筆會被併掉）。預覽若只跟既有 `RECORDS` 比，就會出現「預覽顯示 0、實際併 1 筆」的落差。`refreshDupCells()` 因此也逐步累積 `basis`，並跳過「同 `_id`」（＝更新，不算疑似重複）者。
 
@@ -272,6 +278,8 @@ parseImportJSON(text, fileName)
    - `ruleDup === "newer"` 且匯入檔較舊 → `sameSkipped`（保留我方內容＝沒有變更，**不可計為併單**）
    - 其餘（`theirs`，或 `newer` 且匯入較新）→ 以匯入檔內容覆寫 `dup`（**保留我方 `_id` / `_createdAt`**），`dup._updatedAt` 跟著改成匯入檔的時間（無則 `nowISO()`）、`_owner` 也改為匯入檔的值
 3. 回傳 `{added, updated, sameSkipped, merged, report, summary, verbose}`。
+
+合併完成後可選呼叫 `renumberSerial()`：把我方所有紀錄的流水號重編為 1…N（依 `RECORDS` 順序）。由對話框的 `#mergeRenumber` 控制、**預設關閉**；各站所序號都從 1 起算，合併後本來就會重複。它刻意**不動 `_updatedAt`** —— 序號只是顯示標籤，重編不應讓每筆紀錄都看起來被編輯過。
 
 **關鍵設計**：覆寫迴圈一律跳過 `_id` 與 `_createdAt`：
 
@@ -355,11 +363,14 @@ npm test
 
 流程：把 `data.html` 讀進來，在主 script 前注入 `<script>window.__DT_TEST__ = true;</script>`，再以 jsdom 載入。但**不依賴測試鉤子跑完全部** —— 涉及 DOM 與事件處理器的行為一律以**真實 UI 流程**驅動：實際點 `#importMenu` 的按鈕、以 `Object.defineProperty` 塞 `input.files` 後派送 `change`、勾選判重欄位、按下 `#mergeApply`。
 
-涵蓋（T1–T10）：表頭必填標記、合併預覽與實際結果一致、寫入失敗不得毀掉舊資料、惡意 schema key 不注入、儲存格式相容與不殘留、基本功能（建立者／流水號／report CSV／淨化／CSV 解析）、疑似重複併單的欄位與計數、提示不被自動存檔關掉、CSV 對應不提供系統欄位、含資料副本可離線還原且不重複插入執行期控制項。
+涵蓋（T1–T18 + X1）：表頭必填標記、合併預覽與實際結果一致、寫入失敗不得毀掉舊資料、惡意 schema key 不注入、儲存格式相容與不殘留、基本功能（建立者／流水號／report CSV／淨化／CSV 解析）、疑似重複併單的欄位與計數、提示不被自動存檔關掉、CSV 對應不提供系統欄位、含資料副本可離線還原且不重複插入執行期控制項、`report.html` CSV 契約（本側）、合併後重新編號流水號、schema 差異警告、`number` 欄位非數字值不遺失、分頁可鍵盤操作、表頭全選狀態同步、離開頁面前補寫、建立者下拉不屬於選單容器、頁面內無未捕捉例外。
 
-**現況：43 / 43 PASS。**
+**現況：77 / 77 PASS。**
 
 #### 環境限制與注意
+
+- **共用對話框 + 非同步開檔 → 測試必須等到「內容」而非「開著」**：`startMerge()` 要 `await` 讀檔後才建對話框，而 modal 是共用元素。若只等 `#mbMerge` 有 `open` 類別，就會在下一個測試裡立刻成立、讀到**前一個測試殘留的對話框**，產生看起來合理但完全錯的結果（本套測試就曾因此連續誤導 T8/T12/T13，追了半天才定位）。因此 `openMergeViaUI()` / `openCsvViaUI()` 會先 `closeAllOpenModals()`，再等到列出的檔案名稱與數量符合這一批；而只是「檢視」不按套用的測試（T4、T9）要自己收尾。
+- 測試 harness 也在 `loadPage()` 掛 `VirtualConsole` 收集 `jsdomError`（事件處理器裡拋錯會被吞掉），最後由 X1 統一斷言 —— 語法錯誤就是被它抓到。
 
 - **`chromium-browser` 在 Termux 無法啟動**（`libtermux-exec.so` 的 namespace 錯誤），因此不使用它。2026-09 之前是 headless Chromium + `/tmp/opencode/gen_test.py`；該目錄已不存在，測試已改為本檔並納入版控。
 - **jsdom 的 `localStorage` 是 Proxy**：覆寫實例上的 `setItem` 無效（會被當成寫入一個叫 `setItem` 的項目），模擬配額爆掉必須覆寫 `Storage.prototype.setItem`。
@@ -409,6 +420,16 @@ npm test
 - **存檔成功不要呼叫 `hideBanner()`**：會把資訊提示一起關掉（見 3.2）。
 - **`ruleDup = "newer"` 且匯入較舊時要算「略過」**，不能計為併單（見 7.4）。
 - **不要憑讀碼下結論**：2026-09-26 的 review 曾誤判「疑似重複分支未更新 `_owner`／`_updatedAt`」，實際覆寫迴圈本來就會帶到這兩個欄位（只排除 `_raw`／`_id`／`_createdAt`）。寫測試驗證比讀碼可靠。
+
+#### 2026-09-27（第二輪）新增
+
+- **不要把 `type=number` 硬套在已有非數字值的欄位上**：瀏覽器曾把序號的空白值清空後儲存，等於靜默丟資料。改為偵測到非數字時改用 `type=text` 保住原值。
+- **建立者下拉必須插在 `.menuWrap` 之外**：它在 `.menuWrap` 內時，「點外面關選單」的 `closest(".menuWrap")` 會誤判，匯入／匯出選單不會關。
+- **分頁器用 `<span>` 不能聚焦**：改用 `<button>` 並以 `disabled` 表示越界。
+- **表頭全選不會自己跟上**：個別列勾選後必須呼叫 `syncHeaderCheckbox()`，否則表頭永遠停在全選或未選。
+- **去抖動存檔的缺口**：`beforeunload` / `pagehide` 必須補寫，否則 350 ms 內關分頁就遺失最後一筆。
+- **測試用 `MutationObserver` 在 jsdom 不可靠**：本輪曾用它追蹤 modal 開啟卻一無所獲，最後靠「在函式裡暫時 `console.error(new Error().stack)`」才看到真正呼叫者。除錯 jsdom 時直接插堆疊比較快。
+- **不要用字串比對來檢查屬性**：`!/data-runtime/.test(html)` 會被程式源碼裡的同名**字串**誤判；要看屬性就得真解析 DOM（且注意「載入後由程式建立」與「靜態標記」的分別）。
 
 ---
 
