@@ -382,7 +382,6 @@ function uid(){ return "id"+Date.now().toString(36)+Math.random().toString(36).s
 function nowISO(){ var d=new Date(); var p=function(n){return (n<10?"0":"")+n;}; return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes()); }
 function strip(s){ return String(s==null?"":s).replace(/[\t\r ]+/g," ").replace(/[\u2028\u2029]/g," ").trim(); }
 function norm(s){ return String(s==null?"":s).trim(); }
-function esc(s){ return String(s==null?"":s); }
 function fmtVal(k, v){
   if(v==null||v==="") return "";
   var f=findField(k);
@@ -429,7 +428,7 @@ function saveToStorage(){
     if(prev && prev!==gen) dropGen(prev);
     dropLegacy();
     dirty=false;
-    hideBanner();
+    clearErrorBanner();
   }catch(e){
     if(gen) dropGen(gen);                              /* 清掉寫不完整的新世代，指標仍指向舊的可用資料 */
     showBanner("localStorage 寫入失敗／已滿（"+(e&&e.name||"error")+"）。本次未動到先前的記憶，建議用「存檔（含資料）」下載副本保存。","danger");
@@ -620,6 +619,12 @@ function showBanner(msg, kind){
   var b=$("banner"); b.textContent=msg; b.className="banner "+(kind||""); b.style.display="block";
 }
 function hideBanner(){ $("banner").style.display="none"; }
+/* 存檔成功只清掉錯誤／警告 banner；不要蓋掉「已載入含資料副本」「已從本機記憶還原」等資訊提示
+   （先前存檔成功呼叫 hideBanner()，那些提示在去抖動存檔後約 350ms 就被關掉） */
+function clearErrorBanner(){
+  var b=$("banner");
+  if(b.classList.contains("danger")||b.classList.contains("warn")) b.style.display="none";
+}
 
 document.querySelectorAll(".modalBack").forEach(function(m){
   m.addEventListener("click", function(e){ if(e.target===m) m.classList.remove("open"); });
@@ -874,7 +879,7 @@ function dateStamp(){ var d=new Date(); var p=function(n){return (n<10?"0":"")+n
 
 function csvEscape(v){ v=String(v==null?"":v); if(/[",\n\r]/.test(v)) return '"'+v.replace(/"/g,'""')+'"'; return v; }
 
-function buildCSV(headers, recFn){ // recFn(cellArrs) → 每列資料串列
+function buildCSV(headers){
   var lines=[];
   lines.push(headers.map(csvEscape).join(","));
   RECORDS.forEach(function(r){
@@ -1028,7 +1033,7 @@ function computeFileCounts(incoming){
     else if(recDiff(t,rec)) upd++;
     else same++;
   }
-  return { add:add, upd:upd, same:same, dup:0 };
+  return { add:add, upd:upd, same:same };
 }
 function dupMatch(rec, t, dedupKeys){
   for(var j=0;j<dedupKeys.length;j++){ var k=dedupKeys[j]; var a=norm(rec[k]), b=norm(t[k]); if(a===""||b===""||a!==b) return false; }
@@ -1081,12 +1086,12 @@ function doMerge(filings, ddk, ruleUpd, ruleDup, verbose){
       var dup=dupDetection(rec, targetById, ddk);
       if(dup){
         if(ruleDup==="both"){ rec._id=uid(); RECORDS.push(rec); targetById[rec._id]=rec; nA++; added++; return; }
-        var incomingNewer = (!dup._updatedAt || !rec._updatedAt) ? true : String(rec._updatedAt)>String(dup._updatedAt);
         if(ruleDup==="mine"){ nS++; sameSkipped++; return; }
-        if(ruleDup==="theirs" || (ruleDup==="newer"&&incomingNewer)){
-          Object.keys(rec).forEach(function(k){ if(k==="_raw")return; if(k==="_id"||k==="_createdAt")return; if(rec[k]===undefined)return; dup[k]=String(rec[k]); });
-        }
-        dup._updatedAt = incomingNewer?(rec._updatedAt||nowISO()):dup._updatedAt;
+        var incomingNewer = (!dup._updatedAt || !rec._updatedAt) ? true : String(rec._updatedAt)>String(dup._updatedAt);
+        if(ruleDup==="newer" && !incomingNewer){ nS++; sameSkipped++; return; }   // 匯入較舊 → 保留我方內容，等於沒有變更
+        Object.keys(rec).forEach(function(k){ if(k==="_raw")return; if(k==="_id"||k==="_createdAt")return; if(rec[k]===undefined)return; dup[k]=String(rec[k]); });
+        dup._updatedAt = rec._updatedAt || nowISO();   // 內容既然取自匯入檔，時間戳必須跟著換
+        if(rec._owner) dup._owner = rec._owner;
         targetById[dup._id]=dup; nM++; merged++; return;
       }
       RECORDS.push(rec); targetById[rec._id]=rec; nA++; added++;
@@ -1156,9 +1161,9 @@ function openCsvMapModal(name, headers, dataRows){
   var th1=document.createElement("th"); th1.textContent="CSV 欄位（第 1 列為表頭）"; tr.appendChild(th1);
   var th2=document.createElement("th"); th2.textContent="對應到本工具欄位 key"; tr.appendChild(th2);
   body.appendChild(tr);
-  var fieldKeys=[""].concat(SCHEMA.map(function(f){return f.key;})).concat(SYSTEM_KEYS);
-  var headerInfo={};
-  window._csvImport={ name:name, headers:headers, dataRows:dataRows, sel:[] };
+  /* 只提供資料欄位：系統欄位（_id/_owner/_createdAt/_updatedAt）由工具維護，
+     若可對應就能讓匯入檔覆寫識別碼與建立者。 */
+  var fieldKeys=[""].concat(SCHEMA.map(function(f){return f.key;}));
   var selCtrl=[];
   for(var i=0;i<headers.length;i++){
     var row=document.createElement("tr");
@@ -1180,6 +1185,7 @@ function openCsvMapModal(name, headers, dataRows){
   var chk=document.createElement("input"); chk.type="checkbox"; chk.id="csvSkipEmpty";
   cb.appendChild(chk); cb.appendChild(document.createTextNode(" 跳過整列皆空的資料列"));
   extra.appendChild(cb);
+  extra.appendChild(el("div","sys","系統欄位（識別碼／建立者／建立時間／更新時間）由工具自動維護，不提供對應。"));
   $("mapApply").textContent="匯入";
   $("mapApply").onclick=function(){
     var map=[]; selCtrl.forEach(function(s,i){ var k=s.value; if(k) map.push({ csv:i, key:k }); });
@@ -1243,7 +1249,6 @@ function openReportMap(){
   $("mapTitle").textContent="匯出 CSV（供 report.html 分析）— 欄位對應";
   $("mapExtra").innerHTML="<div class='sys'>日期欄自動輸出 YYYY-MM-DD；每欄內容自動淨化（逗號→全形、換行→分段、引號→全形），符合 report.html 的純逗號分欄解析。合併後由總部匯出，直接拖進 report.html 即可。</div>";
   $("mapApply").textContent="匯出";
-  var fn=$("mapApply").onclick;
   $("mapApply").onclick=function(){
     var mapping={};
     REPORT_HEADERS.forEach(function(h,i){ var k=selCtrl[i].value; if(k) mapping[h]=k; });
@@ -1254,8 +1259,6 @@ function openReportMap(){
   };
   openModal("mbMap");
 }
-$("mapApply").onclick=function(){ /* 覆寫於 openCsvMapModal / openReportMap */ };
-
 /* ============================= 選單開關 ============================= */
 ["btnImportMenu","btnExportMenu"].forEach(function(id){
   $(id).onclick=function(){
