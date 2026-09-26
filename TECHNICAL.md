@@ -391,6 +391,32 @@ npm test
 
 目前：**11 / 11 PASS**。
 
+### 10.4 端到端測試（Playwright + 真實 Chromium，只跑在 CI）
+
+`tests/e2e/data-html.spec.js` + `playwright.config.js`，由 `.github/workflows/ci.yml` 的 e2e job 執行（目前 10 項）。
+
+存在理由：jsdom 沒有版面引擎、沒有真正的檔案挑選器與下載、沒有鍵盤焦點、也沒有 CSS 媒體查詢 —— 有一整類 bug 它看不到。這套只放 jsdom 做不到的驗證：
+
+| 測試 | jsdom 為何做不到 |
+|---|---|
+| 真實檔案挑選器走完合併流程，並驗證預設重編流水號 | jsdom 只能假造 `input.files` |
+| 匯出 JSON 真的下載並解析檔案內容 | jsdom 的 `<a download>` 不會下載 |
+| 「存檔（含資料）」下載後以 `file://` 從磁碟開啟還原（含 `pageerror` 檢查） | 同上，且需要真實導覽 |
+| 重新載入後未存變更仍在（`beforeunload` 補寫） | jsdom 沒有真實導覽 |
+| 列印模式 CSS 真的隱藏工具列 | jsdom 無 `matchMedia`／無媒體查詢 |
+| 手機寬度不水平溢出、modal 不超出視窗 | jsdom 無版面（`getBoundingClientRect()` 全為 0） |
+| 分頁按鈕可鍵盤聚焦 | jsdom 無焦點模型 |
+| 直接以 `file://` 開啟（實際使用情境） | 可用，但搭配真實引擎才有意義 |
+| 惡意 schema key 在真實引擎中不注入 | inline handler 是否真的不會被觸發，只有真引擎知道 |
+
+**重要：Playwright 在 Android/Termux 會直接拋 `Unsupported platform: android`，因此本機無法執行**，只能在 CI（或一般桌機）跑。這套是先在 CI 上跑起來、再依回報修到綠的 —— 第一版就有一條測試因為「惡意 key 只放進 record 而沒放進 schema」而根本沒測到東西，是 CI 上的真實引擎抓出來的。
+
+設定要點：
+
+- 以 `python3 -m http.server` 提供頁面，而非 `file://`（避開各瀏覽器對 `file://` 的 localStorage 與 blob 下載政策差異）。真實 `file://` 情境另有專門測試。
+- CI 直接呼叫 `node node_modules/@playwright/test/cli.js`，**不依賴 `node_modules/.bin`** —— 本專案 `.npmrc` 設了 `bin-links=false`，CI 也不會有 `.bin`。
+- 兩層測試的分工：jsdom 那套快、可離線、每次改動都跑；端到端那套慢但真實，負責 jsdom 看不見的部分。
+
 ---
 
 ## 11. 已知限制與注意事項

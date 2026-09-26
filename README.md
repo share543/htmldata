@@ -1,5 +1,7 @@
 # data.html — 單檔離線資料管理工具
 
+![CI](https://github.com/share543/htmldata/actions/workflows/ci.yml/badge.svg)
+
 一個**單一 HTML 檔、零安裝、零網路、跨平台**的資料管理工具。用瀏覽器直接開啟即可使用：建立欄位、輸入資料、自動存檔、匯入／匯出，並能把多位同事各自建好的檔案**合併統整**。
 
 設計場景：**站所業務各自建檔 → 匯出 JSON → 總部用同一工具多檔批次合併 → 匯出 `report.html` 相容 CSV 做分析**。
@@ -208,7 +210,8 @@
 | `README.md` | 使用說明（本文件） |
 | `TECHNICAL.md` | 技術文件（資料模型、儲存、合併引擎、測試） |
 | `AGENTS.md` | 給協作者／AI 的專案備註與限制 |
-| `tests/data-html.test.js` | 回歸測試（**開發用**，需 `npm install`，見下節） |
+| `tests/data-html.test.js` | 回歸測試（**開發用**，`npm test`，見下節） |
+| `tests/e2e/data-html.spec.js` + `playwright.config.js` | 端到端測試（**開發用**，`npm run test:e2e`，只跑在 CI） |
 | `package.json` / `.npmrc` | 測試用工具設定（工具本體不需要） |
 | `customer.xlsx` | 欄位範本來源（`2026總表`，25 欄；**含真實客戶資料，刻意不納入版控**，見 `.gitignore`） |
 
@@ -216,19 +219,29 @@
 
 ## 開發（改動 `data.html` 時）
 
-工具本體 `data.html` 是**零依賴單一檔案**，直接用瀏覽器開就能跑、也能直接編輯。
-但改動後請跑回歸測試：
+工具本體 `data.html` 是**零依賴單一檔案**，直接用瀏覽器開就能跑、也能直接編輯。改動後請跑回歸測試 —— 測試分兩層，CI 每次推送都會跑（`.github/workflows/ci.yml`）：
+
+| 層 | 指令 | 環境 | 負責什麼 |
+|---|---|---|---|
+| 單元／整合 | `npm test` | Node + jsdom，**可離線、約 1 秒** | 邏輯與狀態：儲存格式相容、合併規則與計數、`report.html` CSV 契約、含資料副本、注入防護等 78 項 |
+| 端到端 | `npm run test:e2e` | Playwright + **真實 Chromium**（**本機 Termux 跑不了**） | jsdom 做不到的：真實檔案挑選器、真正下載與以 `file://` 開副本、重新載入（`beforeunload`）、鍵盤焦點、列印／手機寬度 CSS、真實版面 |
 
 ```sh
-npm install   # 只有第一次需要（安裝 jsdom；node_modules/ 已列入 .gitignore）
-npm test
+npm install   # 只有第一次需要（jsdom + @playwright/test；node_modules/ 已 gitignore）
+npm test      # 快速回歸，隨時可跑
 ```
 
-測試以 Node + jsdom 載入 `data.html`，並用**真實 UI 流程**驅動（實際點選單、派送選檔事件、按下套用合併），共 70 餘項檢查，涵蓋儲存格式相容、合併規則與計數、`report.html` CSV 契約、含資料副本、分頁可及性與離開頁面前補寫等。
+端到端那套需要額外安裝瀏覽器，而且 **Playwright 在 Android/Termux 會直接拋 `Unsupported platform: android`**，所以只在 CI 或一般桌機跑：
 
-> 為什麼不是 headless Chromium：Termux 環境下 `chromium-browser` 會因 `libtermux-exec.so` 的 namespace 問題無法啟動。
+```sh
+node node_modules/@playwright/test/cli.js install chromium   # 一般桌機
+npm run test:e2e
+```
+
+> 以下兩個限制都來自這個 repo 的特殊環境，寫下來避免以後有人重新踩：
 >
-> 為什麼 `.npmrc` 要設 `bin-links=false`：Android 共享儲存（`/storage/emulated/0`）的 FUSE 不支援 symlink，npm 建立 `node_modules/.bin` 時會 `EACCES`。測試不需要任何相依套件的 CLI。
+> - **端到端不依賴 `node_modules/.bin`**：`.npmrc` 設了 `bin-links=false`（Android 共享儲存的 FUSE 不支援 symlink，npm 建立 `node_modules/.bin` 會 `EACCES`），因此 script 直接呼叫 CLI。
+> - **端到端用本機 HTTP 伺服器而非 `file://`**：各瀏覽器對 `file://` 的 localStorage 與 blob 下載政策不一，容易不穩；真實的 `file://` 情境另有專門測試。
 
 ---
 

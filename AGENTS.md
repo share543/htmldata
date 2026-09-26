@@ -10,7 +10,10 @@ Tools for the CRM customer data, plus their docs.
 - `customer.xlsx` — source of the 25-column template (see below). **Not committed** — it is gitignored because it holds real customer data.
 - `tests/data-html.test.js` + `package.json` / `.npmrc` — dev-only regression tests. The tool itself stays zero-dependency.
 
-Tests: `npm install` (once) then `npm test` — Node + jsdom, no browser needed (77 checks, see `tests/data-html.test.js`). See "Working on data.html" below.
+Tests: two layers, both run in CI (`.github/workflows/ci.yml`):
+
+- `npm test` — Node + jsdom, offline, ~1s. 78 checks in `tests/data-html.test.js`. This is the main regression net.
+- `npm run test:e2e` — Playwright + real Chromium, `tests/e2e/data-html.spec.js` (10 specs). Covers only what jsdom cannot: real file chooser, real downloads, opening the self-copy from disk via `file://`, real reload (`beforeunload`), keyboard focus, print/mobile CSS, real layout. **Playwright cannot run on Android/Termux** (`Unsupported platform: android`), so this only runs in CI or on a desktop.
 
 ## The data
 
@@ -26,7 +29,7 @@ Tests: `npm install` (once) then `npm test` — Node + jsdom, no browser needed 
 
 - Single file, no deps. Keep CSS/JS inline. Edit directly.
 - Verify JS syntax by extracting the main `<script>` and running `node --check`.
-- Tests: `tests/data-html.test.js` (`npm test`). It injects `window.__DT_TEST__ = true` before the main script and drives **real UI flows** (clicking menus, dispatching file `change` events, pressing 套用合併) rather than only the hook API. jsdom has no layout engine, so CSS behaviour is not covered. Note `chromium-browser` does **not** run in Termux (libtermux-exec.so namespace error), which is why jsdom is used.
+- Both test layers run in CI. When changing `data.html`, `npm test` is the fast loop; the Playwright layer only runs in CI (it cannot run on Termux), so if you touch real-browser behaviour (downloads, `file://`, CSS, focus) expect to verify it there. Never depend on `node_modules/.bin` in scripts — `.npmrc` sets `bin-links=false`.
 - jsdom gotcha: its `localStorage` is a Proxy — assigning to the *instance* is silently treated as writing an entry, so simulating a quota failure requires overriding `Storage.prototype.setItem`.
 - This mount does not support symlinks, so `npm install` needs `bin-links=false`; that is set in `.npmrc`. `node_modules/` is gitignored.
 - The report consumer is `../crm/report.html` (reads `.xlsx`/`.csv`, exact header names, naive comma split). Older notes give the absolute path `/mnt/sdcard/Documents/opencode/crm/report.html` — inside Termux use `~/storage/documents/opencode/crm/report.html` (`/mnt/sdcard` exists but is not readable from Termux).
