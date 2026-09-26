@@ -374,8 +374,8 @@ function backfillSerial(){
   }
   if(changed) scheduleSave();
 }
-/* 把所有流水號重新編成一 1..N（依目前 RECORDS 順序）。
-   供合併後手動使用 —— 各站所各自從 1 起算，合併後難免重複。
+/* 把所有流水號重新編成一 1..N（依目前 RECORDS 順序）。合併時預設執行。
+   識別依據是統編與客代，序號只是顯示標籤；各站所各自從 1 起算，合併後難免重複。
    刻意不動 _updatedAt：序號只是顯示標籤，不應讓每筆紀錄都看起來被編輯過。 */
 function renumberSerial(){
   var sk=serialKey(); if(!sk) return 0;
@@ -1023,7 +1023,7 @@ function openMergeDialog(filings){
   html+="<div class='chkrow'><select id='ruleUpd' class='fw'><option value='theirs'>以匯入檔覆寫（總部常用：業務更新回傳）</option><option value='mine'>保留我方（忽略匯入變更）</option><option value='both'>兩者並存（匯入檔視為新紀錄）</option></select></div>";
   html+="<div class='chkrow'><b>疑似重複（同判重欄位值、不同識別碼）處理規則：</b></div>";
   html+="<div class='chkrow'><select id='ruleDup' class='fw'><option value='newer'>併成一筆，保留較新內容與我方識別碼</option><option value='theirs'>併成一筆，以匯入檔覆寫內容</option><option value='mine'>併成一筆，保留我方內容</option><option value='both'>保留兩筆（不併）</option></select></div>";
-  html+="<div class='chkrow'><label><input type='checkbox' id='mergeRenumber'> 合併後重新編號流水號（由 1 開始，依目前資料順序；預設不勾選，以免改變各站所原編號）</label></div>";
+  html+="<div class='chkrow'><label><input type='checkbox' id='mergeRenumber' checked> 合併後重新編號流水號（由 1 開始，依目前資料順序；統一編號／客代等欄位不受影響）</label></div>";
   html+="<div class='sys'>識別碼全程保留：同一業務再次匯出時會被判定為「更新」而非新增，避免重複建檔。不同業務對同一客戶各建一支紀錄時，可用判重欄位偵測並合併。</div>";
   body.innerHTML=html;
   // 判重欄位清單以 DOM API 建立：這些 key 來自匯入檔（他人檔案），

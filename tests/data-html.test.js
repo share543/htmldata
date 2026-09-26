@@ -462,41 +462,47 @@ async function main() {
       { name: "b.json", data: { schema, records: [mk("b1", "33333333", "1"), mk("b2", "44444444", "2")] } },
     ];
 
-    // (a) 預設不勾選 → 保留各站所原編號（可能重複）
+    // (a) 預設應為勾選；取消勾選後套用 → 保留各站所原編號（會重複）
     check("開啟合併對話框前沒有任何開啟中的 modal", d.querySelectorAll(".modalBack.open").length === 0,
       `開啟中的 modal = ${Array.from(d.querySelectorAll(".modalBack.open")).map((m) => m.id).join(",") || "（無）"}`);
     T.clearStorage();
     T.setRecords([]);
-    for (const f of filings[0].data.schema) T.state().schema.push(f);
-    T.state().schema.length = 0; filings[0].data.schema.forEach((f) => T.state().schema.push(f));
+    T.state().schema.length = 0;
+    filings[0].data.schema.forEach((f) => T.state().schema.push(f));
     await openMergeViaUI(filings);
     check("對話框提供「重新編號流水號」選項", !!d.getElementById("mergeRenumber"), "");
-    check("預設為不勾選（不改變現行行為）", d.getElementById("mergeRenumber") && !d.getElementById("mergeRenumber").checked, "");
+    check("預設為勾選（識別依據是統編／客代，序號只是顯示標籤）",
+      d.getElementById("mergeRenumber").checked === true,
+      `checked = ${d.getElementById("mergeRenumber") && d.getElementById("mergeRenumber").checked}`);
     check("合併前列出的檔案數 = 2", d.querySelectorAll("#fileRows tr[data-idx]").length === 2,
       `列數 = ${d.querySelectorAll("#fileRows tr[data-idx]").length}`);
     check("合併前我方 0 筆、schema = 2 欄", T.getRecords().length === 0 && T.state().schema.length === 2,
       `我方 ${T.getRecords().length} 筆、schema ${T.state().schema.length} 欄`);
+    d.getElementById("mergeRenumber").checked = false;   // 手動取消
     d.querySelector("#mergeBody .ddk").checked = true;
     d.getElementById("mergeApply").click();
     await sleep(80);
     let serials = T.getRecords().map((r) => r["序號"]).sort();
-    check("未勾選時保留原編號（會有重複）", serials.join(",") === "1,1,2,2",
+    check("取消勾選時保留原編號（會有重複）", serials.join(",") === "1,1,2,2",
       `筆數 = ${T.getRecords().length}、序號 = ${JSON.stringify(serials)}、首筆 = ${JSON.stringify(T.getRecords()[0] || null).slice(0, 160)}`);
 
-    // (b) 勾選 → 重新編號為 1..N且不重複
+    // (b) 維持預設（勾選）→ 重新編號為 1..N 且不重複
     T.clearStorage();
     T.setRecords([]);
-    T.state().schema.length = 0; filings[0].data.schema.forEach((f) => T.state().schema.push(f));
+    T.state().schema.length = 0;
+    filings[0].data.schema.forEach((f) => T.state().schema.push(f));
     await openMergeViaUI(filings);
-    d.getElementById("mergeRenumber").checked = true;
     d.querySelector("#mergeBody .ddk").checked = true;
     d.getElementById("mergeApply").click();
     await sleep(80);
     const rs = T.getRecords();
     serials = rs.map((r) => r["序號"]);
-    check("勾選後重新編號為 1..N且不重複",
+    check("預設勾選時重新編號為 1..N 且不重複",
       rs.length === 4 && serials.slice().sort().join(",") === "1,2,3,4",
       `筆數 = ${rs.length}、序號 = ${serials.join(",")}`);
+    check("重新編號不得改動 _updatedAt",
+      rs.every((r) => r._updatedAt === "2026-01-01 00:00"),
+      `_updatedAt = ${JSON.stringify(Array.from(new Set(rs.map((r) => r._updatedAt))))}`);
   } catch (e) { check("T12 執行", false, e.message); }
 
   /* ══════════════════════════════════════════════════════════

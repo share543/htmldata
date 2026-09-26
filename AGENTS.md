@@ -49,7 +49,7 @@ Tests: `npm install` (once) then `npm test` — Node + jsdom, no browser needed 
 - The owner-filter `<select>` must be inserted **outside** `.menuWrap`, or the click-outside handler will think it is still inside a menu and never close the import/export dropdowns.
 - Pager controls are `<button>` (keyboard reachable), not `<span>`. Individual row selection must call `syncHeaderCheckbox()`.
 - `beforeunload` / `pagehide` must flush the pending debounced save.
-- Merge dialog: `#schemaDiff` warns about field-structure differences (written with `textContent`); `#mergeRenumber` is opt-in and must stay off by default.
+- Merge dialog: `#schemaDiff` warns about field-structure differences (written with `textContent`); `#mergeRenumber` **defaults to ON** — 統編／客代 are the identity fields and 序號 is only a display label, so renumbering to 1…N is intended (it must not touch `_updatedAt`).
 - Test harness: `openMergeViaUI` / `openCsvViaUI` must first close any open modal and then wait for the **content** to match the batch (file count + names). Waiting only for `open` reads a leftover dialog from a previous test and yields confidently wrong results. Tests that merely inspect a dialog (T4, T9) must close it themselves.
 - Never conclude from reading code alone: the 2026-09-26 review wrongly claimed the dup branch did not update `_owner`/`_updatedAt`. Write a test.
 

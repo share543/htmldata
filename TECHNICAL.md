@@ -279,7 +279,7 @@ parseImportJSON(text, fileName)
    - 其餘（`theirs`，或 `newer` 且匯入較新）→ 以匯入檔內容覆寫 `dup`（**保留我方 `_id` / `_createdAt`**），`dup._updatedAt` 跟著改成匯入檔的時間（無則 `nowISO()`）、`_owner` 也改為匯入檔的值
 3. 回傳 `{added, updated, sameSkipped, merged, report, summary, verbose}`。
 
-合併完成後可選呼叫 `renumberSerial()`：把我方所有紀錄的流水號重編為 1…N（依 `RECORDS` 順序）。由對話框的 `#mergeRenumber` 控制、**預設關閉**；各站所序號都從 1 起算，合併後本來就會重複。它刻意**不動 `_updatedAt`** —— 序號只是顯示標籤，重編不應讓每筆紀錄都看起來被編輯過。
+合併完成後預設會呼叫 `renumberSerial()`：把我方所有紀錄的流水號重編為 1…N（依 `RECORDS` 順序）。由對話框的 `#mergeRenumber` 控制、**預設開啟**，可取消。識別依據是統編與客代，序號只是顯示標籤，而各站所各自從 1 起算、合併後本來就會重複；重編讓報表上的序號不重複。它刻意**不動 `_updatedAt`**。
 
 **關鍵設計**：覆寫迴圈一律跳過 `_id` 與 `_createdAt`：
 
@@ -363,7 +363,7 @@ npm test
 
 流程：把 `data.html` 讀進來，在主 script 前注入 `<script>window.__DT_TEST__ = true;</script>`，再以 jsdom 載入。但**不依賴測試鉤子跑完全部** —— 涉及 DOM 與事件處理器的行為一律以**真實 UI 流程**驅動：實際點 `#importMenu` 的按鈕、以 `Object.defineProperty` 塞 `input.files` 後派送 `change`、勾選判重欄位、按下 `#mergeApply`。
 
-涵蓋（T1–T18 + X1）：表頭必填標記、合併預覽與實際結果一致、寫入失敗不得毀掉舊資料、惡意 schema key 不注入、儲存格式相容與不殘留、基本功能（建立者／流水號／report CSV／淨化／CSV 解析）、疑似重複併單的欄位與計數、提示不被自動存檔關掉、CSV 對應不提供系統欄位、含資料副本可離線還原且不重複插入執行期控制項、`report.html` CSV 契約（本側）、合併後重新編號流水號、schema 差異警告、`number` 欄位非數字值不遺失、分頁可鍵盤操作、表頭全選狀態同步、離開頁面前補寫、建立者下拉不屬於選單容器、頁面內無未捕捉例外。
+涵蓋（T1–T18 + X1）：表頭必填標記、合併預覽與實際結果一致、寫入失敗不得毀掉舊資料、惡意 schema key 不注入、儲存格式相容與不殘留、基本功能（建立者／流水號／report CSV／淨化／CSV 解析）、疑似重複併單的欄位與計數、提示不被自動存檔關掉、CSV 對應不提供系統欄位、含資料副本可離線還原且不重複插入執行期控制項、`report.html` CSV 契約（本側）、合併後重新編號流水號（預設開啟，不動 `_updatedAt`）、schema 差異警告、`number` 欄位非數字值不遺失、分頁可鍵盤操作、表頭全選狀態同步、離開頁面前補寫、建立者下拉不屬於選單容器、頁面內無未捕捉例外。
 
 **現況：77 / 77 PASS。**
 
