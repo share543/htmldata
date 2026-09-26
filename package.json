@@ -1,0 +1,12 @@
+{
+  "name": "htmldata-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "data.html 的開發工具（回歸測試）。工具本體 data.html 為零依賴單一檔案，使用它不需要這裡的任何東西。",
+  "scripts": {
+    "test": "node tests/data-html.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.1"
+  }
+}
